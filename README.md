@@ -10,6 +10,7 @@ Empty-Queue is a gamified productivity web app that helps families or teams sepa
 - **Hamburger navigation** – switch between 메인, 코인 사용처, 히스토리(차트) 뷰로 빠르게 이동.
 - **Coin usage ledger** – log how rewards are spent per profile while safeguarding available balances.
 - **History charts** – visualize recent task clears per profile for momentum tracking.
+- **Task editing & undo** – inline edits plus completion rollback keep queues clean and accurate.
 - **Task management essentials** – create, reorder (drag-style via arrows), complete, and delete tasks per queue.
 - **Progress insights** – dashboard with queue stats, streak status, badges, and spotlighted focus tasks.
 - **Secure auth** – email/password registration with bcrypt hashing plus JWT-based session handling.

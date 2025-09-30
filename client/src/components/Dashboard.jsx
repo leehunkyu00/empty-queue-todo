@@ -212,6 +212,18 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
+  const handleUpdateTask = async (taskId, updates) => {
+    if (!activeProfileId) return;
+    try {
+      await api.queues.updateTask(token, taskId, updates, activeProfileId);
+      await refreshData();
+      showToast('작업을 수정했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to update task', err);
+      showToast(err.message || '작업 수정에 실패했습니다.', 'error');
+    }
+  };
+
   const handleDeleteTask = async (taskId) => {
     if (!activeProfileId) return;
     try {
@@ -221,6 +233,21 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     } catch (err) {
       console.error('Failed to delete task', err);
       showToast(err.message || '작업 삭제에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleReopenTask = async (taskId) => {
+    if (!activeProfileId) return;
+    try {
+      const response = await api.queues.reopenTask(token, taskId, activeProfileId);
+      await refreshData();
+      if (response?.profile) {
+        onUserUpdate(response.profile);
+      }
+      showToast('작업을 다시 진행 목록으로 이동했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to reopen task', err);
+      showToast(err.message || '작업 되돌리기에 실패했습니다.', 'error');
     }
   };
 
@@ -326,6 +353,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
           onCreateTask={handleCreateTask}
           onCompleteTask={handleCompleteTask}
           onDeleteTask={handleDeleteTask}
+          onUpdateTask={handleUpdateTask}
           onReorder={handleReorderTasks}
         />
         <QueueColumn
@@ -336,11 +364,12 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
           onCreateTask={handleCreateTask}
           onCompleteTask={handleCompleteTask}
           onDeleteTask={handleDeleteTask}
+          onUpdateTask={handleUpdateTask}
           onReorder={handleReorderTasks}
         />
       </div>
       <div className="bottom-grid">
-        <RecentCompleted items={recentCompleted} />
+        <RecentCompleted items={recentCompleted} onReopen={handleReopenTask} />
       </div>
     </>
   );

@@ -27,15 +27,64 @@ function SortableTaskCard({
   onCompleteTask,
   onMove,
   onDeleteTask,
+  onUpdateTask,
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [editForm, setEditForm] = useState({
+    title: task.title,
+    description: task.description || '',
+    difficulty: task.difficulty || 'medium',
+  });
+
+  useEffect(() => {
+    setEditForm({
+      title: task.title,
+      description: task.description || '',
+      difficulty: task.difficulty || 'medium',
+    });
+    setError(null);
+  }, [task]);
+
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task._id,
+    disabled: {
+      draggable: isEditing,
+    },
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.8 : 1,
+    opacity: isDragging ? 0.85 : 1,
+  };
+
+  const handleEditChange = (event) => {
+    const { name, value } = event.target;
+    setEditForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSave = async () => {
+    if (!editForm.title.trim()) {
+      setError('제목은 비워둘 수 없습니다.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onUpdateTask(task._id, {
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        difficulty: editForm.difficulty,
+      });
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to update task', err);
+      setError(err.message || '작업 수정에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -43,7 +92,14 @@ function SortableTaskCard({
       <header>
         <h3>{task.title}</h3>
         <div className="task-header-actions">
-          <button type="button" className="drag-handle" aria-label="작업 순서 변경" {...attributes} {...listeners}>
+          <button
+            type="button"
+            className="drag-handle"
+            aria-label="작업 순서 변경"
+            {...attributes}
+            {...listeners}
+            disabled={isEditing}
+          >
             <span />
             <span />
             <span />
@@ -74,22 +130,70 @@ function SortableTaskCard({
           <button
             type="button"
             onClick={() => onMove(task._id, 'up')}
-            disabled={index === 0}
+            disabled={index === 0 || isEditing}
           >
             ↑
           </button>
           <button
             type="button"
             onClick={() => onMove(task._id, 'down')}
-            disabled={isLast}
+            disabled={isLast || isEditing}
           >
             ↓
+          </button>
+          <button type="button" onClick={() => setIsEditing((prev) => !prev)}>
+            {isEditing ? '닫기' : '수정'}
           </button>
           <button type="button" className="danger" onClick={() => onDeleteTask(task._id)}>
             삭제
           </button>
         </div>
       </footer>
+      {isEditing ? (
+        <div className="task-edit-panel">
+          <label>
+            제목
+            <input
+              type="text"
+              name="title"
+              value={editForm.title}
+              onChange={handleEditChange}
+            />
+          </label>
+          <label>
+            설명
+            <textarea
+              name="description"
+              rows={3}
+              value={editForm.description}
+              onChange={handleEditChange}
+            />
+          </label>
+          <label>
+            난이도
+            <select
+              name="difficulty"
+              value={editForm.difficulty}
+              onChange={handleEditChange}
+            >
+              {DIFFICULTY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {error ? <p className="task-edit-error">{error}</p> : null}
+          <div className="task-edit-actions">
+            <button type="button" onClick={handleSave} disabled={saving}>
+              {saving ? '저장 중...' : '저장'}
+            </button>
+            <button type="button" className="secondary" onClick={() => setIsEditing(false)} disabled={saving}>
+              취소
+            </button>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -102,7 +206,8 @@ function QueueColumn({
   onCreateTask,
   onCompleteTask,
   onDeleteTask,
-  onReorder,
+  onUpdateTask = () => Promise.resolve(),
+  onReorder = () => {},
 }) {
   const [form, setForm] = useState({
     title: '',
@@ -259,9 +364,11 @@ function QueueColumn({
                   key={task._id}
                   task={task}
                   index={index}
+                  isLast={index === internalTasks.length - 1}
                   onCompleteTask={onCompleteTask}
                   onMove={handleMove}
                   onDeleteTask={onDeleteTask}
+                  onUpdateTask={onUpdateTask}
                 />
               ))
             )}

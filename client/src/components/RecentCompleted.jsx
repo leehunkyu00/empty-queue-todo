@@ -1,4 +1,4 @@
-function RecentCompleted({ items }) {
+function RecentCompleted({ items, onReopen }) {
   return (
     <section className="recent-completed">
       <h2>최근 클리어</h2>
@@ -20,6 +20,15 @@ function RecentCompleted({ items }) {
                   </time>
                 ) : null}
               </div>
+              {onReopen ? (
+                <button
+                  type="button"
+                  className="recent-undo"
+                  onClick={() => onReopen(task._id)}
+                >
+                  되돌리기
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

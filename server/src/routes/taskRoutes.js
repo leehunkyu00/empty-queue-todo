@@ -10,6 +10,7 @@ router.get('/queues', taskController.getQueues);
 router.post('/tasks', taskController.createTask);
 router.patch('/tasks/:taskId', taskController.updateTask);
 router.post('/tasks/:taskId/complete', taskController.completeTask);
+router.post('/tasks/:taskId/reopen', taskController.reopenTask);
 router.delete('/tasks/:taskId', taskController.deleteTask);
 router.post('/queues/reorder', taskController.reorderTasks);
 

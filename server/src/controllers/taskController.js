@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const Task = require('../models/Task');
 const User = require('../models/User');
-const { applyTaskCompletion } = require('../utils/gamification');
+const {
+  applyTaskCompletion,
+  XP_BY_DIFFICULTY,
+  COINS_BY_DIFFICULTY,
+  calculateLevel,
+} = require('../utils/gamification');
 const { listProfiles, findProfile, getPrimaryProfile } = require('../utils/profile');
 
 const QUEUE_METADATA = {
@@ -260,13 +265,13 @@ async function completeTask(req, res) {
 
     task.status = 'completed';
     task.completedAt = new Date();
-    await task.save();
 
     const pendingCount = await Task.countDocuments({
       user: userId,
       queue: task.queue,
       status: 'pending',
       assignedProfileId: task.assignedProfileId,
+      _id: { $ne: task.id },
     });
     const queueNowEmpty = pendingCount === 0;
 
@@ -282,13 +287,15 @@ async function completeTask(req, res) {
       queueNowEmpty,
     });
 
-    await user.save();
+    task.completionSnapshot = {
+      xpAwarded: gamification.xpGain,
+      coinsAwarded: gamification.coinsGain,
+      queueEmptyBonusApplied: queueNowEmpty,
+    };
 
-    return res.json({
-      task,
-      gamification,
-      profile: user,
-    });
+    await Promise.all([user.save(), task.save()]);
+
+    return res.json({ task, gamification, profile: user });
   } catch (error) {
     console.error('completeTask error:', error);
     return res.status(500).json({ message: 'Failed to complete task' });
@@ -319,6 +326,90 @@ async function deleteTask(req, res) {
   } catch (error) {
     console.error('deleteTask error:', error);
     return res.status(500).json({ message: 'Failed to delete task' });
+  }
+}
+
+async function reopenTask(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const taskId = req.params.taskId;
+
+    if (!mongoose.Types.ObjectId.isValid(taskId)) {
+      return res.status(400).json({ message: 'Invalid task id' });
+    }
+
+    const task = await Task.findOne({ _id: taskId, user: userId });
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    const activeProfile = getActiveProfile(req.user, req.query.profileId || task.assignedProfileId);
+    if (!activeProfile || task.assignedProfileId !== activeProfile.profileId) {
+      return res.status(403).json({ message: 'Task belongs to a different profile' });
+    }
+
+    if (task.status !== 'completed') {
+      return res.status(400).json({ message: 'Task is not completed' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const snapshot = task.completionSnapshot || {};
+    const baseXpValue = XP_BY_DIFFICULTY[task.difficulty] || XP_BY_DIFFICULTY.medium;
+    const baseCoinValue = COINS_BY_DIFFICULTY[task.difficulty] || COINS_BY_DIFFICULTY.medium;
+    const xpToRemove = snapshot.xpAwarded != null ? snapshot.xpAwarded : baseXpValue;
+    const coinsToRemove = snapshot.coinsAwarded != null ? snapshot.coinsAwarded : baseCoinValue;
+    const queueBonusApplied = Boolean(snapshot.queueEmptyBonusApplied);
+
+    task.status = 'pending';
+    task.completedAt = null;
+    task.completionSnapshot = null;
+
+    const lastPending = await Task.findOne({
+      user: userId,
+      queue: task.queue,
+      status: 'pending',
+      assignedProfileId: task.assignedProfileId,
+      _id: { $ne: task.id },
+    })
+      .sort({ order: -1 })
+      .select('order')
+      .lean();
+
+    task.order = lastPending ? lastPending.order + 1 : 1;
+
+    if (user.stats) {
+      user.stats.completedTasks = Math.max(0, (user.stats.completedTasks || 0) - 1);
+      if (queueBonusApplied) {
+        if (task.queue === 'deep') {
+          user.stats.deepWorkClears = Math.max(0, (user.stats.deepWorkClears || 0) - 1);
+        }
+        if (task.queue === 'admin') {
+          user.stats.adminClears = Math.max(0, (user.stats.adminClears || 0) - 1);
+        }
+      }
+    }
+
+    user.xp = Math.max(0, (user.xp || 0) - xpToRemove);
+    user.coins = Math.max(0, (user.coins || 0) - coinsToRemove);
+    user.level = calculateLevel(user.xp || 0);
+
+    await Promise.all([user.save(), task.save()]);
+
+    return res.json({
+      task,
+      profile: user,
+      reverted: {
+        xpRemoved: xpToRemove,
+        coinsRemoved: coinsToRemove,
+      },
+    });
+  } catch (error) {
+    console.error('reopenTask error:', error);
+    return res.status(500).json({ message: 'Failed to reopen task' });
   }
 }
 
@@ -395,5 +486,6 @@ module.exports = {
   updateTask,
   completeTask,
   deleteTask,
+  reopenTask,
   reorderTasks,
 };

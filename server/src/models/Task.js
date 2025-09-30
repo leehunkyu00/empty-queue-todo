@@ -61,6 +61,14 @@ const taskSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    completionSnapshot: {
+      type: {
+        xpAwarded: { type: Number, default: 0 },
+        coinsAwarded: { type: Number, default: 0 },
+        queueEmptyBonusApplied: { type: Boolean, default: false },
+      },
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -479,6 +479,11 @@ button {
   color: #b91c1c;
 }
 
+.task-actions button.secondary {
+  background: rgba(148, 163, 184, 0.25);
+  color: #475569;
+}
+
 .queue-empty {
   text-align: center;
   padding: 1.5rem;
@@ -515,8 +520,12 @@ button {
 .recent-completed li {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.8rem;
+}
+
+.recent-completed li > div:first-of-type {
+  flex: 1;
 }
 
 .queue-label {
@@ -998,6 +1007,77 @@ button {
 .task-card.dragging .drag-handle {
   cursor: grabbing;
   border-color: rgba(37, 99, 235, 0.6);
+}
+
+.task-edit-panel {
+  margin-top: 0.8rem;
+  background: rgba(237, 242, 255, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.task-edit-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #1f2937;
+}
+
+.task-edit-panel input,
+.task-edit-panel textarea,
+.task-edit-panel select {
+  border-radius: 8px;
+  border: 1px solid #cbd5f5;
+  background: white;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.88rem;
+}
+
+.task-edit-panel textarea {
+  resize: vertical;
+}
+
+.task-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.task-edit-actions button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+}
+
+.task-edit-actions button:first-of-type {
+  background: #2563eb;
+  color: white;
+}
+
+.task-edit-actions button.secondary {
+  background: rgba(148, 163, 184, 0.25);
+  color: #475569;
+}
+
+.task-edit-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.82rem;
+}
+
+.recent-undo {
+  margin-left: auto;
+  border: none;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.18);
+  color: #1d4ed8;
+  padding: 0.35rem 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 @media (min-width: 1024px) {

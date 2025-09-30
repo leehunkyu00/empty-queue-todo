@@ -85,6 +85,12 @@ export const api = {
         token,
         params: profileId ? { profileId } : undefined,
       }),
+    reopenTask: (token, taskId, profileId) =>
+      request(`/tasks/${taskId}/reopen`, {
+        method: 'POST',
+        token,
+        params: profileId ? { profileId } : undefined,
+      }),
     deleteTask: (token, taskId, profileId) =>
       request(`/tasks/${taskId}`, {
         method: 'DELETE',
