@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -47,9 +49,26 @@ async function bootstrap() {
   app.use('/api', taskRoutes);
   app.use('/api', progressRoutes);
 
-  app.use((req, res) => {
-    res.status(404).json({ message: 'Not found' });
-  });
+  const clientDistPath = path.resolve(__dirname, '../../client/dist');
+  if (fs.existsSync(clientDistPath)) {
+    app.use(express.static(clientDistPath));
+
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      return res.sendFile(path.join(clientDistPath, 'index.html'));
+    });
+  } else {
+    app.use((req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      return res.status(503).json({
+        message: 'Client build not found. Please run `npm run build` inside client/ before serving.',
+      });
+    });
+  }
 
   app.use((error, _req, res, _next) => {
     console.error('Unhandled error:', error);

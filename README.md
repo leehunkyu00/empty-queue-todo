@@ -85,6 +85,42 @@ VITE_API_URL=http://localhost:4000
 3. Start the client (`npm run dev` in `client/`).
 4. Visit `http://localhost:5173`, create an account, and begin managing queues.
 
+### Deploying with PM2
+
+To serve the production build with PM2:
+
+1. Install dependencies and build the client bundle.
+
+   ```bash
+   # from repo root
+   (cd server && npm install)
+   (cd client && npm install && npm run build)
+   ```
+
+2. Install PM2 globally if it is not available yet.
+
+   ```bash
+   npm install -g pm2
+   ```
+
+3. Start the application through the provided ecosystem file.
+
+   ```bash
+   pm2 start ecosystem.config.js
+   ```
+
+4. Expose the desired port (default `4000`) through your firewall / reverse proxy and visit `http://<server-ip>:4000` from an external network.
+
+Useful PM2 commands:
+
+```bash
+pm2 status                # view app list
+pm2 logs empty-queue-app  # stream logs
+pm2 restart empty-queue-app
+pm2 stop empty-queue-app
+pm2 save                  # persist process list across restarts
+```
+
 ## API Overview
 
 All secured endpoints require `Authorization: Bearer <token>`.
