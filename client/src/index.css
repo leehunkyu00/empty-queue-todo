@@ -956,6 +956,50 @@ button {
   font-weight: 600;
 }
 
+
+.task-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.drag-handle {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: white;
+  cursor: grab;
+  padding: 4px 0;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.drag-handle span {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: #475569;
+  border-radius: 999px;
+}
+
+.drag-handle span + span {
+  margin-top: 3px;
+}
+
+.task-card.dragging {
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+}
+
+.task-card.dragging .drag-handle {
+  cursor: grabbing;
+  border-color: rgba(37, 99, 235, 0.6);
+}
+
 @media (min-width: 1024px) {
   .nav-panel {
     position: sticky;
