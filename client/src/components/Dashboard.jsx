@@ -6,13 +6,13 @@ import HouseholdManager from './HouseholdManager';
 import RecentCompleted from './RecentCompleted';
 import FocusBanner from './FocusBanner';
 import Toast from './Toast';
-import CoinUsage from './CoinUsage';
+import StoreView, { StoreManager } from './StoreView';
 import HistoryView from './HistoryView';
 
 const NAV_ITEMS = [
   { key: 'main', label: '메인' },
   { key: 'household', label: '역할 & 가족 관리' },
-  { key: 'coins', label: '코인 사용처' },
+  { key: 'store', label: '코인 스토어' },
   { key: 'history', label: '히스토리' },
 ];
 
@@ -24,7 +24,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const [queuesData, setQueuesData] = useState(null);
   const [progressData, setProgressData] = useState(null);
   const [historyData, setHistoryData] = useState(null);
-  const [coinData, setCoinData] = useState({ transactions: [], summary: null });
+  const [storeData, setStoreData] = useState({ items: [], purchases: [], averageReward: 65 });
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,7 +34,8 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const [navOpen, setNavOpen] = useState(false);
   const [activeView, setActiveView] = useState('main');
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [coinsLoading, setCoinsLoading] = useState(false);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeManagerOpen, setStoreManagerOpen] = useState(false);
   const [initialProfileSynced, setInitialProfileSynced] = useState(false);
   const [statsExpanded, setStatsExpanded] = useState(false);
 
@@ -130,34 +131,43 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
         setHistoryLoading(false);
       }
     },
-    [showToast, token]
+    [showToast, token, activeProfileId]
   );
 
-  const loadCoins = useCallback(
+  const loadStore = useCallback(
     async (profileId) => {
       if (!token || !profileId) return;
-      setCoinsLoading(true);
+      setStoreLoading(true);
       try {
-        const response = await api.coins.list(token, profileId);
-        setCoinData(response);
+        const response = await api.store.fetch(token, profileId);
+        setStoreData(response);
+        if (response?.profiles) {
+          setProfiles(response.profiles);
+        }
+        if (response?.activeProfile) {
+          setActiveProfile(response.activeProfile);
+          if (!activeProfileId) {
+            setActiveProfileId(response.activeProfile.profileId);
+          }
+        }
       } catch (err) {
-        console.error('Failed to load coin usage', err);
-        showToast(err.message || '코인 사용처를 불러오지 못했습니다.', 'error');
+        console.error('Failed to load store', err);
+        showToast(err.message || '스토어 정보를 불러오지 못했습니다.', 'error');
       } finally {
-        setCoinsLoading(false);
+        setStoreLoading(false);
       }
     },
-    [showToast, token]
+    [showToast, token, activeProfileId]
   );
 
   useEffect(() => {
-    if (activeView === 'coins' && activeProfileId) {
-      loadCoins(activeProfileId);
+    if (activeView === 'store' && activeProfileId) {
+      loadStore(activeProfileId);
     }
     if (activeView === 'history' && activeProfileId) {
       loadHistory(activeProfileId);
     }
-  }, [activeProfileId, activeView, loadCoins, loadHistory]);
+  }, [activeProfileId, activeView, loadStore, loadHistory]);
 
   const handleViewChange = (viewKey) => {
     setActiveView(viewKey);
@@ -319,27 +329,67 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
-  const handleCoinSpend = async ({ amount, memo }) => {
+  const handleCreateStoreItem = async (payload) => {
     if (!activeProfileId) {
       showToast('먼저 계정을 선택해주세요.', 'warning');
       return;
     }
     try {
-      await api.coins.spend(token, {
-        amount,
-        memo,
+      await api.store.createItem(token, {
+        ...payload,
         profileId: activeProfileId,
       });
-      await Promise.all([refreshData(), loadCoins(activeProfileId)]);
-      showToast('코인 사용 내역을 기록했습니다.', 'success');
+      await loadStore(activeProfileId);
+      showToast('스토어에 상품을 등록했습니다.', 'success');
     } catch (err) {
-      console.error('Failed to record coin usage', err);
-      showToast(err.message || '코인 사용 기록에 실패했습니다.', 'error');
+      console.error('Failed to create store item', err);
+      showToast(err.message || '상품 등록에 실패했습니다.', 'error');
+      throw err;
+    }
+  };
+
+  const handlePurchaseStoreItem = async (item) => {
+    if (availableCoins < item.price) {
+      showToast('코인이 부족합니다. 작업을 완료하고 코인을 모아보세요!', 'warning');
+      return;
+    }
+    try {
+      await api.store.purchaseItem(token, item._id);
+      await Promise.all([refreshData(), loadStore(activeProfileId)]);
+      showToast(`${item.name}을(를) 구매했습니다!`, 'success');
+    } catch (err) {
+      console.error('Failed to purchase store item', err);
+      showToast(err.message || '구매에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleUpdateStoreItem = async (itemId, updates) => {
+    try {
+      await api.store.updateItem(token, itemId, updates);
+      await loadStore(activeProfileId);
+      showToast('상품 정보를 수정했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to update store item', err);
+      showToast(err.message || '상품 수정에 실패했습니다.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteStoreItem = async (itemId) => {
+    try {
+      await api.store.deleteItem(token, itemId);
+      await loadStore(activeProfileId);
+      showToast('상품을 삭제했습니다.', 'warning');
+    } catch (err) {
+      console.error('Failed to delete store item', err);
+      showToast(err.message || '상품 삭제에 실패했습니다.', 'error');
+      throw err;
     }
   };
 
   const activeProfileName = activeProfile?.name || '계정 없음';
   const availableCoins = progressData?.user?.coins || 0;
+  const averageReward = storeData?.averageReward || 65;
 
   const levelValue =
     progressData?.levelProgress?.level ?? progressData?.user?.level ?? 0;
@@ -412,13 +462,16 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     </>
   );
 
-  const renderCoinView = () => (
-    <CoinUsage
-      data={coinData}
+  const renderStoreView = () => (
+    <StoreView
+      items={storeData?.items || []}
+      purchases={storeData?.purchases || []}
+      activeProfile={storeData?.activeProfile || activeProfile}
+      averageReward={averageReward}
       availableCoins={availableCoins}
-      activeProfileName={activeProfileName}
-      loading={coinsLoading}
-      onSpend={handleCoinSpend}
+      onPurchaseItem={handlePurchaseStoreItem}
+      onOpenManager={() => setStoreManagerOpen(true)}
+      loading={storeLoading}
     />
   );
 
@@ -441,8 +494,8 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   );
 
   let currentView;
-  if (activeView === 'coins') {
-    currentView = renderCoinView();
+  if (activeView === 'store') {
+    currentView = renderStoreView();
   } else if (activeView === 'history') {
     currentView = renderHistoryView();
   } else if (activeView === 'household') {
@@ -473,6 +526,16 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
 
   return (
     <div className="app-shell">
+      <StoreManager
+        open={storeManagerOpen}
+        onClose={() => setStoreManagerOpen(false)}
+        items={storeData?.items || []}
+        onCreateItem={handleCreateStoreItem}
+        onUpdateItem={handleUpdateStoreItem}
+        onDeleteItem={handleDeleteStoreItem}
+        averageReward={averageReward}
+        loading={storeLoading}
+      />
       <aside className={`nav-panel ${navOpen ? 'open' : ''}`}>
         <div className="nav-header">
           <h2>Empty Queue</h2>

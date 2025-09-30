@@ -937,6 +937,286 @@ button {
   gap: 1.2rem;
 }
 
+.store-view {
+  background: white;
+  border-radius: 18px;
+  padding: 1.5rem;
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.store-view header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.store-manage-button {
+  border: none;
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: white;
+  cursor: pointer;
+}
+
+.store-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.2rem;
+}
+
+.store-balance {
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+
+.store-balance strong {
+  color: #1d4ed8;
+}
+
+.store-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  background: #f8fafc;
+  border-radius: 16px;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.store-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.store-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.store-form input,
+.store-form textarea {
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  background: white;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+.store-form button {
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem;
+  background: #2563eb;
+  color: white;
+  font-weight: 600;
+}
+
+.store-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.store-item-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.store-item-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  background: white;
+  border-radius: 14px;
+  padding: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.store-item-card strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.store-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+}
+
+.store-item-meta button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.75rem;
+  background: rgba(37, 99, 235, 0.18);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.store-warning {
+  color: #f97316;
+}
+
+.store-manager-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.store-manager {
+  width: min(720px, 90vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: white;
+  border-radius: 18px;
+  padding: 1.5rem;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.store-manager header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-button {
+  border: none;
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.store-manager-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.store-manager-item {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: #f8fafc;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.store-manager-fields {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.store-manager-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.store-manager-fields input,
+.store-manager-fields textarea {
+  border-radius: 8px;
+  border: 1px solid #cbd5f5;
+  padding: 0.55rem 0.65rem;
+  background: white;
+}
+
+.store-manager-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.store-manager-actions button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-weight: 600;
+  background: #2563eb;
+  color: white;
+}
+
+.store-manager-actions button.danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #b91c1c;
+}
+
+.store-helper {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.store-price {
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.store-archive {
+  margin-top: 0.4rem;
+  border: none;
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  background: rgba(148, 163, 184, 0.25);
+  color: #475569;
+  font-weight: 600;
+}
+
+.store-purchase-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.store-purchase-list li {
+  display: flex;
+  justify-content: space-between;
+  background: white;
+  border-radius: 12px;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.store-purchase-list li strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.store-purchase-list li time {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.store-empty {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
 .coin-usage header h2,
 .history-view header h2 {
   margin: 0;

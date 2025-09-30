@@ -10,6 +10,7 @@ const taskRoutes = require('./routes/taskRoutes');
 const progressRoutes = require('./routes/progressRoutes');
 const householdRoutes = require('./routes/householdRoutes');
 const coinRoutes = require('./routes/coinRoutes');
+const storeRoutes = require('./routes/storeRoutes');
 
 async function bootstrap() {
   await connectDB();
@@ -42,6 +43,7 @@ async function bootstrap() {
   app.use('/api/auth', authRoutes);
   app.use('/api/household', householdRoutes);
   app.use('/api/coins', coinRoutes);
+  app.use('/api/store', storeRoutes);
   app.use('/api', taskRoutes);
   app.use('/api', progressRoutes);
 

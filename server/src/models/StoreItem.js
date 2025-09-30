@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const coinLogSchema = new mongoose.Schema(
+const storeItemSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -17,44 +17,42 @@ const coinLogSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    storeItemId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'StoreItem',
-    },
-    storeItemName: {
+    name: {
       type: String,
-    },
-    amount: {
-      type: Number,
       required: true,
-      min: 0,
+      trim: true,
     },
-    type: {
-      type: String,
-      enum: ['spend'],
-      default: 'spend',
-    },
-    memo: {
+    description: {
       type: String,
       trim: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 1,
     },
     createdAt: {
       type: Date,
       default: Date.now,
     },
+    archived: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
-    timestamps: false,
+    timestamps: true,
   }
 );
 
-coinLogSchema.index({ user: 1, profileId: 1, createdAt: -1 });
+storeItemSchema.index({ user: 1, profileId: 1, createdAt: -1 });
 
-coinLogSchema.set('toJSON', {
+storeItemSchema.set('toJSON', {
   transform: (_doc, ret) => {
     delete ret.__v;
+    delete ret.updatedAt;
     return ret;
   },
 });
 
-module.exports = mongoose.model('CoinLog', coinLogSchema);
+module.exports = mongoose.model('StoreItem', storeItemSchema);

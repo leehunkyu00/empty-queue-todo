@@ -140,4 +140,16 @@ export const api = {
       }),
     spend: (token, data) => request('/coins/spend', { method: 'POST', token, data }),
   },
+  store: {
+    fetch: (token, profileId) =>
+      request('/store', {
+        token,
+        params: profileId ? { profileId } : undefined,
+      }),
+    createItem: (token, data) => request('/store', { method: 'POST', token, data }),
+    updateItem: (token, itemId, data) => request(`/store/${itemId}`, { method: 'PATCH', token, data }),
+    archiveItem: (token, itemId) => request(`/store/${itemId}/archive`, { method: 'POST', token }),
+    deleteItem: (token, itemId) => request(`/store/${itemId}`, { method: 'DELETE', token }),
+    purchaseItem: (token, itemId) => request(`/store/${itemId}/purchase`, { method: 'POST', token }),
+  },
 };
