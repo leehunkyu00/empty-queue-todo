@@ -215,6 +215,71 @@ button {
   gap: 1rem;
 }
 
+.stats-panel {
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.stats-panel.collapsed {
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+}
+
+.stats-toggle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.2rem;
+}
+
+.stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.stats-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-size: 0.9rem;
+}
+
+.stats-toggle-button {
+  border: none;
+  background: rgba(15, 23, 42, 0.08);
+  color: #1f2937;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.stats-toggle-button:hover {
+  background: rgba(59, 130, 246, 0.18);
+  color: #1d4ed8;
+}
+
+.stats-panel-body {
+  padding: 0 1.2rem 1.2rem;
+}
+
+.stats-panel-body .stats-overview {
+  margin-top: 0.6rem;
+}
+
 .stat-card {
   background: white;
   border-radius: 16px;

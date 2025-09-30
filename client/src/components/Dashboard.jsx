@@ -36,6 +36,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [coinsLoading, setCoinsLoading] = useState(false);
   const [initialProfileSynced, setInitialProfileSynced] = useState(false);
+  const [statsExpanded, setStatsExpanded] = useState(false);
 
   const deepQueue = queuesData?.queues?.deep;
   const adminQueue = queuesData?.queues?.admin;
@@ -340,9 +341,46 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const activeProfileName = activeProfile?.name || '계정 없음';
   const availableCoins = progressData?.user?.coins || 0;
 
+  const levelValue =
+    progressData?.levelProgress?.level ?? progressData?.user?.level ?? 0;
+  const coinsValue = progressData?.user?.coins ?? 0;
+  const streakValue =
+    progressData?.streak?.current ?? progressData?.user?.streakCount ?? 0;
+  const deepPending = progressData?.queueStats?.deep?.pending ?? 0;
+  const adminPending = progressData?.queueStats?.admin?.pending ?? 0;
+
+  const statsSummaryItems = [
+    `Lv. ${levelValue}`,
+    `코인 ${coinsValue}`,
+    `연속 ${streakValue}일`,
+    `진행 Deep ${deepPending} · Admin ${adminPending}`,
+  ];
+
   const renderMainView = () => (
     <>
-      <StatsOverview data={progressData} />
+      <section className={`stats-panel ${statsExpanded ? 'expanded' : 'collapsed'}`}>
+        <div className="stats-toggle-bar">
+          <div className="stats-summary" role="status" aria-live="polite">
+            {statsSummaryItems.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="stats-toggle-button"
+            onClick={() => setStatsExpanded((prev) => !prev)}
+            aria-expanded={statsExpanded}
+            aria-controls="stats-panel-content"
+          >
+            {statsExpanded ? '접기 ▲' : '펼치기 ▼'}
+          </button>
+        </div>
+        {statsExpanded && (
+          <div id="stats-panel-content" className="stats-panel-body">
+            <StatsOverview data={progressData} />
+          </div>
+        )}
+      </section>
       <FocusBanner deepQueue={deepQueue} adminQueue={adminQueue} />
       <div className="queues-container">
         <QueueColumn
