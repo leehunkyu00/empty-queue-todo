@@ -1,0 +1,33 @@
+{
+  "name": "empty-queue-api",
+  "version": "1.0.0",
+  "description": "Empty-Queue Gamified Todo List API",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "todo",
+    "gamification",
+    "productivity"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.18",
+    "depd": "^2.0.0",
+    "dotenv": "^17.2.3",
+    "etag": "^1.8.1",
+    "express": "^4.19.2",
+    "ipaddr.js": "^2.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.18.3",
+    "morgan": "^1.10.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
