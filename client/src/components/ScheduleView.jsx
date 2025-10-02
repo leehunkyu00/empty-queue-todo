@@ -13,20 +13,48 @@ import { CSS } from '@dnd-kit/utilities';
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
 const MINUTE_HEIGHT = 1; // 1px per minute keeps the canvas at 60px per hour
 const MINUTES_IN_DAY = 24 * 60;
+const MIN_BLOCK_DURATION_MINUTES = 15;
 
-function formatTimeRange(start, end) {
-  const startTime = start ? dayjs(start).format('HH:mm') : '';
-  const endTime = end ? dayjs(end).format('HH:mm') : '';
-  return `${startTime} - ${endTime}`;
+function resolveBlockMinutes(block, referenceDay) {
+  if (!block) {
+    return { startMinute: 0, endMinute: MIN_BLOCK_DURATION_MINUTES };
+  }
+  const baseStart = block.startMinuteOfDay;
+  const baseEnd = block.endMinuteOfDay;
+  let startMinute = Number.isFinite(baseStart) ? baseStart : dayjs(block.start).diff(referenceDay, 'minute');
+  let endMinute = Number.isFinite(baseEnd) ? baseEnd : dayjs(block.end).diff(referenceDay, 'minute');
+
+  if (!Number.isFinite(startMinute)) {
+    startMinute = 0;
+  }
+  if (!Number.isFinite(endMinute)) {
+    endMinute = startMinute + MIN_BLOCK_DURATION_MINUTES;
+  }
+
+  startMinute = Math.max(0, Math.min(startMinute, MINUTES_IN_DAY - MIN_BLOCK_DURATION_MINUTES));
+  endMinute = Math.max(startMinute + MIN_BLOCK_DURATION_MINUTES, Math.min(endMinute, MINUTES_IN_DAY));
+  endMinute = Math.min(endMinute, MINUTES_IN_DAY);
+
+  return { startMinute, endMinute };
 }
 
-function computePosition(start, end, dayStart) {
-  const startDate = dayjs(start);
-  const endDate = dayjs(end);
-  const top = Math.max(0, startDate.diff(dayStart, 'minute')) * MINUTE_HEIGHT;
-  const durationMinutes = Math.max(15, endDate.diff(startDate, 'minute'));
-  const height = durationMinutes * MINUTE_HEIGHT;
-  return { top, height };
+function formatTimeRange(block, dayStart) {
+  if (!block) return '--:-- - --:--';
+  const { startMinute, endMinute } = resolveBlockMinutes(block, dayStart);
+  const startMoment = dayStart.add(startMinute, 'minute');
+  const endMoment = dayStart.add(endMinute, 'minute');
+  return `${startMoment.format('HH:mm')} - ${endMoment.format('HH:mm')}`;
+}
+
+function computePosition(block, dayStart) {
+  const { startMinute, endMinute } = resolveBlockMinutes(block, dayStart);
+  const durationMinutes = Math.max(MIN_BLOCK_DURATION_MINUTES, endMinute - startMinute);
+  return {
+    top: startMinute * MINUTE_HEIGHT,
+    height: durationMinutes * MINUTE_HEIGHT,
+    startMinute,
+    endMinute,
+  };
 }
 
 function DraggableTask({ task, onDoubleClick, onDelete }) {
@@ -131,9 +159,14 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
 
   const handleCreate = async () => {
     if (submitting) return;
+    const trimmedTitle = title.trim();
     setSubmitting(true);
     try {
-      await onSubmit({ ...draft, type, title: title.trim() });
+      await onSubmit({
+        ...draft,
+        type,
+        title: trimmedTitle ? trimmedTitle : undefined,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -226,11 +259,15 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
 
     setSubmitting(true);
     try {
+      const startMinuteOfDay = startHour * 60 + startMinute;
+      const endMinuteOfDay = endHour * 60 + endMinute;
       await onSubmit({
         type,
-        title: title?.trim() || undefined,
+        title: title?.trim() ? title.trim() : undefined,
         start: baseStart.toISOString(),
         end: baseEnd.toISOString(),
+        startMinuteOfDay,
+        endMinuteOfDay,
       });
     } catch (err) {
       setError(err?.message || '블록 저장에 실패했습니다.');
@@ -301,7 +338,7 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
   );
 }
 
-function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now }) {
+function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now, dayStart }) {
   if (!block) {
     return (
       <section className="current-block-banner idle">
@@ -322,7 +359,7 @@ function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now }) {
       <div className="current-block-meta">
         <h3>
           {isDeep ? '현재 모드: Deep Work' : '현재 모드: Admin'}
-          <span>{formatTimeRange(block.start, block.end)}</span>
+          <span>{formatTimeRange(block, dayStart)}</span>
         </h3>
         <p>{block.title || (isDeep ? '집중력을 높이기 위한 깊은 몰입 시간입니다.' : '빠르게 처리할 수 있는 작업들을 한 번에 끝내보세요.')}</p>
       </div>
@@ -590,17 +627,31 @@ function ScheduleView({
     () =>
       (blocks || []).map((block) => {
         const preview = resizePreview?.blockId === block._id ? resizePreview : null;
-        const start = preview ? preview.start : block.start;
-        const end = preview ? preview.end : block.end;
-        const startDate = dayjs(start);
-        const endDate = dayjs(end);
-        const durationMinutes = Math.max(endDate.diff(startDate, 'minute'), 0);
-        return {
+        const startOverride = preview ? preview.start : undefined;
+        const endOverride = preview ? preview.end : undefined;
+        const startMinuteOverride = preview && Number.isFinite(preview.startMinuteOfDay) ? preview.startMinuteOfDay : undefined;
+        const endMinuteOverride = preview && Number.isFinite(preview.endMinuteOfDay) ? preview.endMinuteOfDay : undefined;
+
+        const enrichedBlock = {
           ...block,
-          start,
-          end,
-          durationMinutes,
-          position: computePosition(start, end, dayStart),
+          start: startOverride ?? block.start,
+          end: endOverride ?? block.end,
+          startMinuteOfDay: Number.isFinite(startMinuteOverride) ? startMinuteOverride : block.startMinuteOfDay,
+          endMinuteOfDay: Number.isFinite(endMinuteOverride) ? endMinuteOverride : block.endMinuteOfDay,
+        };
+
+        const positionInfo = computePosition(enrichedBlock, dayStart);
+        const startMoment = dayStart.add(positionInfo.startMinute, 'minute');
+        const endMoment = dayStart.add(positionInfo.endMinute, 'minute');
+
+        return {
+          ...enrichedBlock,
+          start: startMoment.toISOString(),
+          end: endMoment.toISOString(),
+          startMinuteOfDay: positionInfo.startMinute,
+          endMinuteOfDay: positionInfo.endMinute,
+          durationMinutes: positionInfo.endMinute - positionInfo.startMinute,
+          position: { top: positionInfo.top, height: positionInfo.height },
         };
       }),
     [blocks, dayStart, resizePreview]
@@ -613,15 +664,15 @@ function ScheduleView({
   }, [isToday, now, dayStart]);
   const currentBlock = useMemo(() => {
     if (!isToday) return null;
-    const nowValue = now.valueOf();
+    const nowMinute = Math.max(0, Math.min(now.diff(dayStart, 'minute'), MINUTES_IN_DAY));
     return (
       blocksWithPosition.find((block) => {
-        const start = dayjs(block.start).valueOf();
-        const end = dayjs(block.end).valueOf();
-        return start <= nowValue && nowValue < end;
+        const startMinute = Number.isFinite(block.startMinuteOfDay) ? block.startMinuteOfDay : 0;
+        const endMinute = Number.isFinite(block.endMinuteOfDay) ? block.endMinuteOfDay : startMinute;
+        return startMinute <= nowMinute && nowMinute < endMinute;
       }) || null
     );
-  }, [blocksWithPosition, isToday, now]);
+  }, [blocksWithPosition, dayStart, isToday, now]);
 
   const handlePointerDown = (event) => {
     if (resizingRef.current) return;
@@ -655,12 +706,17 @@ function ScheduleView({
     const endMinuteRounded = Math.ceil(Math.max(startMinute, endMinute) / 15) * 15;
     setSelection(null);
     if (!onCreateBlock) return;
-    if (endMinuteRounded - startMinuteRounded < 15) {
+    if (endMinuteRounded - startMinuteRounded < MIN_BLOCK_DURATION_MINUTES) {
       return;
     }
-    const start = dayjs(date).startOf('day').add(startMinuteRounded, 'minute').toISOString();
-    const end = dayjs(date).startOf('day').add(endMinuteRounded, 'minute').toISOString();
-    setBlockDraft({ start, end });
+    const startMoment = dayStart.add(startMinuteRounded, 'minute');
+    const endMoment = dayStart.add(endMinuteRounded, 'minute');
+    setBlockDraft({
+      start: startMoment.toISOString(),
+      end: endMoment.toISOString(),
+      startMinuteOfDay: startMinuteRounded,
+      endMinuteOfDay: endMinuteRounded,
+    });
     setHoverMinute(null);
   };
 
@@ -680,6 +736,8 @@ function ScheduleView({
       blockId: block._id,
       start: startISO,
       end: endISO,
+      startMinuteOfDay: Number.isFinite(block.startMinuteOfDay) ? block.startMinuteOfDay : dayjs(block.start).diff(dayStart, 'minute'),
+      endMinuteOfDay: Number.isFinite(block.endMinuteOfDay) ? block.endMinuteOfDay : dayjs(block.end).diff(dayStart, 'minute'),
     });
   };
 
@@ -703,22 +761,28 @@ function ScheduleView({
       const currentEnd = dayjs(preview.end);
 
       if (edge === 'start') {
-        const maxMinute = currentEnd.diff(dayStart, 'minute') - 15;
+        const currentEndMinute = Number.isFinite(preview.endMinuteOfDay) ? preview.endMinuteOfDay : currentEnd.diff(dayStart, 'minute');
+        const maxMinute = currentEndMinute - MIN_BLOCK_DURATION_MINUTES;
         const clamped = Math.min(Math.max(snapped, 0), maxMinute);
         const nextStart = dayjs(dayStart).add(clamped, 'minute');
         setResizePreview({
           blockId,
           start: nextStart.toISOString(),
           end: currentEnd.toISOString(),
+          startMinuteOfDay: clamped,
+          endMinuteOfDay: currentEndMinute,
         });
       } else {
-        const minMinute = currentStart.diff(dayStart, 'minute') + 15;
+        const currentStartMinute = Number.isFinite(preview.startMinuteOfDay) ? preview.startMinuteOfDay : currentStart.diff(dayStart, 'minute');
+        const minMinute = currentStartMinute + MIN_BLOCK_DURATION_MINUTES;
         const clamped = Math.max(Math.min(snapped, MINUTES_IN_DAY), minMinute);
         const nextEnd = dayjs(dayStart).add(clamped, 'minute');
         setResizePreview({
           blockId,
           start: currentStart.toISOString(),
           end: nextEnd.toISOString(),
+          startMinuteOfDay: currentStartMinute,
+          endMinuteOfDay: clamped,
         });
       }
     };
@@ -756,7 +820,19 @@ function ScheduleView({
         return;
       }
 
-      Promise.resolve(onUpdateBlock(activeResize.blockId, { start: preview.start, end: preview.end }))
+      const minuteRange = resolveBlockMinutes({
+        start: preview.start,
+        end: preview.end,
+        startMinuteOfDay: preview.startMinuteOfDay,
+        endMinuteOfDay: preview.endMinuteOfDay,
+      }, dayStart);
+
+      Promise.resolve(onUpdateBlock(activeResize.blockId, {
+        start: preview.start,
+        end: preview.end,
+        startMinuteOfDay: minuteRange.startMinute,
+        endMinuteOfDay: minuteRange.endMinute,
+      }))
         .catch(() => {})
         .finally(() => {
           setResizePreview(null);
@@ -787,7 +863,7 @@ function ScheduleView({
 
   return (
     <div className="schedule-container">
-      <CurrentBlockBanner block={currentBlock} onToggleTask={onToggleTask} onUnassignTask={onUnassignTask} now={now} />
+      <CurrentBlockBanner block={currentBlock} onToggleTask={onToggleTask} onUnassignTask={onUnassignTask} now={now} dayStart={dayStart} />
 
       <header className="schedule-header">
         <div className="schedule-date-controls">
@@ -877,7 +953,7 @@ function ScheduleView({
                     <div className="schedule-block-meta">
                       <span className="schedule-block-type">{block.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
                       <strong>{block.title || (block.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
-                      <span className="schedule-block-time-range">{formatTimeRange(block.start, block.end)}</span>
+                      <span className="schedule-block-time-range">{formatTimeRange(block, dayStart)}</span>
                     </div>
                     <div className="schedule-block-tools">
                       {block.type === 'deep' ? (
@@ -935,9 +1011,9 @@ function ScheduleView({
       <NewBlockModal
         draft={blockDraft}
         onCancel={() => setBlockDraft(null)}
-        onSubmit={async ({ start, end, type, title }) => {
+        onSubmit={async ({ start, end, type, title, startMinuteOfDay, endMinuteOfDay }) => {
           try {
-            await onCreateBlock({ start, end, type, title });
+            await onCreateBlock({ start, end, type, title, startMinuteOfDay, endMinuteOfDay });
             setBlockDraft(null);
           } catch {
             // handled via toast in parent

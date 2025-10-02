@@ -96,6 +96,24 @@ function blockAppliesOnDay(block, targetDay, dayStart, dayEnd) {
   return true;
 }
 
+function normalizeMinuteInput(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  return Math.round(numeric);
+}
+
+function clampMinuteRange(startMinute, endMinute) {
+  let start = Math.max(0, Math.min(startMinute, MINUTES_IN_DAY - MIN_BLOCK_DURATION_MINUTES));
+  let end = Math.max(start + MIN_BLOCK_DURATION_MINUTES, Math.min(endMinute, MINUTES_IN_DAY));
+  end = Math.min(end, MINUTES_IN_DAY);
+  return { start, end };
+}
+
 function deriveMinuteOfDay(value) {
   const parsed = dayjs(value);
   if (!parsed.isValid()) {
@@ -654,7 +672,7 @@ async function getSchedule(req, res) {
 async function createScheduleBlock(req, res) {
   try {
     const userId = req.auth.userId;
-    const { profileId, start, end, type, title, notes, recurring, isRecurring, daysOfWeek } = req.body;
+    const { profileId, start, end, type, title, notes, recurring, isRecurring, daysOfWeek, startMinuteOfDay, endMinuteOfDay } = req.body;
 
     if (!start || !end || !type) {
       return res.status(400).json({ message: 'start, end, and type are required' });
@@ -670,11 +688,25 @@ async function createScheduleBlock(req, res) {
       return res.status(400).json({ message: 'Invalid start/end range' });
     }
 
-    const startMinute = startDate.getHours() * 60 + startDate.getMinutes();
-    const endMinute = endDate.getHours() * 60 + endDate.getMinutes();
-    if (endMinute <= startMinute) {
+    if (!(endDate > startDate)) {
       return res.status(400).json({ message: 'Invalid start/end range' });
     }
+
+    let startMinute = normalizeMinuteInput(startMinuteOfDay);
+    let endMinute = normalizeMinuteInput(endMinuteOfDay);
+
+    if (!Number.isFinite(startMinute)) {
+      startMinute = startDate.getHours() * 60 + startDate.getMinutes();
+    }
+    if (!Number.isFinite(endMinute)) {
+      endMinute = endDate.getHours() * 60 + endDate.getMinutes();
+    }
+
+    if (!Number.isFinite(startMinute) || !Number.isFinite(endMinute)) {
+      return res.status(400).json({ message: 'Invalid start/end range' });
+    }
+
+    ({ start: startMinute, end: endMinute } = clampMinuteRange(startMinute, endMinute));
 
     const recurringFlag = recurring ?? isRecurring;
     const isRecurringBlock = recurringFlag !== false;
@@ -716,12 +748,15 @@ async function updateScheduleBlock(req, res) {
   try {
     const userId = req.auth.userId;
     const { blockId } = req.params;
-    const { start, end, type, title, notes, recurring, isRecurring, daysOfWeek } = req.body;
+    const { start, end, type, title, notes, recurring, isRecurring, daysOfWeek, startMinuteOfDay, endMinuteOfDay } = req.body;
 
     const block = await ScheduleBlock.findOne({ _id: blockId, user: userId });
     if (!block) {
       return res.status(404).json({ message: 'Schedule block not found' });
     }
+
+    let workingStartDate = block.start;
+    let workingEndDate = block.end;
 
     if (start || end) {
       const startDate = start ? new Date(start) : block.start;
@@ -730,29 +765,43 @@ async function updateScheduleBlock(req, res) {
         return res.status(400).json({ message: 'Invalid start/end range' });
       }
 
-      let startMinute = Number.isFinite(block.startMinuteOfDay)
-        ? block.startMinuteOfDay
-        : deriveMinuteOfDay(startDate);
-      let endMinute = Number.isFinite(block.endMinuteOfDay)
-        ? block.endMinuteOfDay
-        : deriveMinuteOfDay(endDate);
-
-      if (start) {
-        startMinute = startDate.getHours() * 60 + startDate.getMinutes();
-      }
-      if (end) {
-        endMinute = endDate.getHours() * 60 + endDate.getMinutes();
-      }
-
-      if (endMinute <= startMinute) {
+      if (!(endDate > startDate)) {
         return res.status(400).json({ message: 'Invalid start/end range' });
       }
 
+      workingStartDate = startDate;
+      workingEndDate = endDate;
       block.start = startDate;
       block.end = endDate;
-      block.startMinuteOfDay = startMinute;
-      block.endMinuteOfDay = endMinute;
     }
+
+    let startMinute = normalizeMinuteInput(startMinuteOfDay);
+    let endMinute = normalizeMinuteInput(endMinuteOfDay);
+
+    if (!Number.isFinite(startMinute)) {
+      if (start || !Number.isFinite(block.startMinuteOfDay)) {
+        startMinute = deriveMinuteOfDay(workingStartDate);
+      } else {
+        startMinute = block.startMinuteOfDay;
+      }
+    }
+
+    if (!Number.isFinite(endMinute)) {
+      if (end || !Number.isFinite(block.endMinuteOfDay)) {
+        endMinute = deriveMinuteOfDay(workingEndDate);
+      } else {
+        endMinute = block.endMinuteOfDay;
+      }
+    }
+
+    if (!Number.isFinite(startMinute) || !Number.isFinite(endMinute)) {
+      return res.status(400).json({ message: 'Invalid start/end range' });
+    }
+
+    ({ start: startMinute, end: endMinute } = clampMinuteRange(startMinute, endMinute));
+
+    block.startMinuteOfDay = startMinute;
+    block.endMinuteOfDay = endMinute;
 
     if (type) {
       if (!['deep', 'admin'].includes(type)) {
