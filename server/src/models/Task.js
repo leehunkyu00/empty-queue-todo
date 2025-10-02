@@ -53,6 +53,12 @@ const taskSchema = new mongoose.Schema(
     completedAt: {
       type: Date,
     },
+    scheduledStart: {
+      type: Date,
+    },
+    scheduledEnd: {
+      type: Date,
+    },
     assignedProfileId: {
       type: String,
       required: true,
@@ -76,6 +82,7 @@ const taskSchema = new mongoose.Schema(
 );
 
 taskSchema.index({ user: 1, queue: 1, order: 1 });
+taskSchema.index({ user: 1, assignedProfileId: 1, scheduledStart: 1 });
 
 taskSchema.set('toJSON', {
   transform: (_doc, ret) => {

@@ -7,6 +7,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 router.get('/queues', taskController.getQueues);
+router.get('/schedule', taskController.getSchedule);
 router.post('/tasks', taskController.createTask);
 router.patch('/tasks/:taskId', taskController.updateTask);
 router.post('/tasks/:taskId/complete', taskController.completeTask);

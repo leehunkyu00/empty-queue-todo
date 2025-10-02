@@ -9,6 +9,7 @@ Empty-Queue is a gamified productivity web app that helps families or teams sepa
 - **Household profiles** – create sub-accounts (e.g., kids or teammates) and assign tasks to each member.
 - **Hamburger navigation** – switch between 메인, 코인 사용처, 히스토리(차트) 뷰로 빠르게 이동.
 - **Coin store** – register rewards, show task-equivalent pricing, and track purchase history per profile.
+- **Timeline scheduling** – drag your deep/admin tasks onto a day plan with calendar-style blocks.
 - **History charts** – visualize recent task clears per profile for momentum tracking.
 - **Task editing & undo** – inline edits plus completion rollback keep queues clean and accurate.
 - **Task management essentials** – create, reorder (drag-style via arrows), complete, and delete tasks per queue.
@@ -145,6 +146,7 @@ All secured endpoints require `Authorization: Bearer <token>`.
 | POST   | `/api/store`                    | Create catalog item |
 | POST   | `/api/store/:itemId/archive`    | Archive a store item |
 | POST   | `/api/store/:itemId/purchase`   | Purchase an item |
+| GET    | `/api/schedule`                 | Daily schedule (query: date, profileId) |
 
 ## Frontend Highlights
 

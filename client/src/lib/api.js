@@ -109,6 +109,16 @@ export const api = {
       });
     },
   },
+  schedule: {
+    fetch: (token, profileId, date) =>
+      request('/schedule', {
+        token,
+        params: {
+          profileId,
+          date,
+        },
+      }),
+  },
   progress: {
     dashboard: (token, profileId) =>
       request('/dashboard', {

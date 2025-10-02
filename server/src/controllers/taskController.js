@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const dayjs = require('dayjs');
 const Task = require('../models/Task');
 const User = require('../models/User');
 const {
@@ -42,6 +43,17 @@ function getActiveProfile(userDoc, requestedProfileId) {
     }
   }
   return getPrimaryProfile(userDoc);
+}
+
+function sanitizeProfile(userDoc, profile) {
+  if (!profile) return null;
+  const profiles = listProfiles(userDoc);
+  return profiles.find((item) => item.profileId === profile.profileId) || {
+    profileId: profile.profileId,
+    name: profile.name,
+    role: profile.role,
+    avatarColor: profile.avatarColor,
+  };
 }
 
 async function getQueues(req, res) {
@@ -104,6 +116,8 @@ async function createTask(req, res) {
       dueDate,
       priority = 0,
       assignedProfileId,
+      scheduledStart,
+      scheduledEnd,
     } = req.body;
 
     if (!title || !queue) {
@@ -133,6 +147,14 @@ async function createTask(req, res) {
 
     const order = lastTask ? lastTask.order + 1 : 1;
 
+    if (scheduledStart && scheduledEnd) {
+      const startDate = new Date(scheduledStart);
+      const endDate = new Date(scheduledEnd);
+      if (!(startDate instanceof Date && !Number.isNaN(startDate.valueOf())) || !(endDate instanceof Date && !Number.isNaN(endDate.valueOf())) || endDate <= startDate) {
+        return res.status(400).json({ message: 'scheduledEnd must be after scheduledStart' });
+      }
+    }
+
     const task = await Task.create({
       user: userId,
       title,
@@ -145,6 +167,8 @@ async function createTask(req, res) {
       order,
       assignedProfileId: assigneeProfile.profileId,
       assignedProfileName: assigneeProfile.name,
+      scheduledStart: scheduledStart ? new Date(scheduledStart) : undefined,
+      scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : undefined,
     });
 
     return res.status(201).json({ task });
@@ -182,6 +206,8 @@ async function updateTask(req, res) {
       queue,
       priority,
       assignedProfileId,
+      scheduledStart,
+      scheduledEnd,
     } = req.body;
 
     const originalQueue = task.queue;
@@ -230,6 +256,23 @@ async function updateTask(req, res) {
         .select('order')
         .lean();
       task.order = lastTask ? lastTask.order + 1 : 1;
+    }
+
+    if (scheduledStart !== undefined || scheduledEnd !== undefined) {
+      if (scheduledStart && scheduledEnd) {
+        const startDate = new Date(scheduledStart);
+        const endDate = new Date(scheduledEnd);
+        if (!(startDate instanceof Date && !Number.isNaN(startDate.valueOf())) || !(endDate instanceof Date && !Number.isNaN(endDate.valueOf())) || endDate <= startDate) {
+          return res.status(400).json({ message: 'scheduledEnd must be after scheduledStart' });
+        }
+        task.scheduledStart = startDate;
+        task.scheduledEnd = endDate;
+      } else if (!scheduledStart && !scheduledEnd) {
+        task.scheduledStart = null;
+        task.scheduledEnd = null;
+      } else {
+        return res.status(400).json({ message: 'Both scheduledStart and scheduledEnd are required to set a schedule' });
+      }
     }
 
     await task.save();
@@ -413,6 +456,68 @@ async function reopenTask(req, res) {
   }
 }
 
+async function getSchedule(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const requestedProfileId = req.query.profileId;
+    const dateParam = req.query.date;
+
+    if (!dateParam) {
+      return res.status(400).json({ message: 'date query parameter is required' });
+    }
+
+    const targetDay = dayjs(dateParam);
+    if (!targetDay.isValid()) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+
+    const userDoc = await User.findById(userId).lean();
+    if (!userDoc) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const activeProfile = getActiveProfile(userDoc, requestedProfileId);
+    if (!activeProfile) {
+      return res.status(400).json({ message: 'No household profiles available' });
+    }
+
+    const dayStart = targetDay.startOf('day').toDate();
+    const dayEnd = targetDay.endOf('day').toDate();
+
+    const [scheduled, unscheduled] = await Promise.all([
+      Task.find({
+        user: userId,
+        assignedProfileId: activeProfile.profileId,
+        scheduledStart: { $gte: dayStart, $lte: dayEnd },
+      })
+        .sort({ scheduledStart: 1 })
+        .lean(),
+      Task.find({
+        user: userId,
+        assignedProfileId: activeProfile.profileId,
+        status: 'pending',
+        $or: [
+          { scheduledStart: { $exists: false } },
+          { scheduledStart: null },
+        ],
+      })
+        .sort({ queue: 1, order: 1 })
+        .lean(),
+    ]);
+
+    return res.json({
+      scheduled,
+      unscheduled,
+      activeProfile: sanitizeProfile(userDoc, activeProfile),
+      profiles: listProfiles(userDoc),
+      date: targetDay.format('YYYY-MM-DD'),
+    });
+  } catch (error) {
+    console.error('getSchedule error:', error);
+    return res.status(500).json({ message: 'Failed to load schedule' });
+  }
+}
+
 async function reorderTasks(req, res) {
   try {
     const userId = req.auth.userId;
@@ -487,5 +592,6 @@ module.exports = {
   completeTask,
   deleteTask,
   reopenTask,
+  getSchedule,
   reorderTasks,
 };

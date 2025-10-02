@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
+import dayjs from 'dayjs';
 import { api } from '../lib/api';
-import QueueColumn from './QueueColumn';
 import StatsOverview from './StatsOverview';
 import HouseholdManager from './HouseholdManager';
-import RecentCompleted from './RecentCompleted';
-import FocusBanner from './FocusBanner';
 import Toast from './Toast';
 import StoreView, { StoreManager } from './StoreView';
 import HistoryView from './HistoryView';
+import ScheduleView from './ScheduleView';
 
 const NAV_ITEMS = [
-  { key: 'main', label: '메인' },
+  { key: 'schedule', label: '스케줄' },
   { key: 'household', label: '역할 & 가족 관리' },
   { key: 'store', label: '코인 스토어' },
   { key: 'history', label: '히스토리' },
@@ -25,6 +24,8 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const [progressData, setProgressData] = useState(null);
   const [historyData, setHistoryData] = useState(null);
   const [storeData, setStoreData] = useState({ items: [], purchases: [], averageReward: 65 });
+  const [scheduleData, setScheduleData] = useState({ scheduled: [], unscheduled: [] });
+  const [scheduleDate, setScheduleDate] = useState(dayjs().format('YYYY-MM-DD'));
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,16 +33,13 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const [toast, setToast] = useState(null);
 
   const [navOpen, setNavOpen] = useState(false);
-  const [activeView, setActiveView] = useState('main');
+  const [activeView, setActiveView] = useState('schedule');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [storeLoading, setStoreLoading] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [storeManagerOpen, setStoreManagerOpen] = useState(false);
   const [initialProfileSynced, setInitialProfileSynced] = useState(false);
   const [statsExpanded, setStatsExpanded] = useState(false);
-
-  const deepQueue = queuesData?.queues?.deep;
-  const adminQueue = queuesData?.queues?.admin;
-  const recentCompleted = queuesData?.recentCompleted || [];
 
   const showToast = useCallback((message, tone = 'info') => {
     setToast({ message, tone, id: Date.now() });
@@ -52,6 +50,37 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     const timer = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  const loadSchedule = useCallback(
+    async (profileId, date) => {
+      if (!token || !profileId) return;
+      const targetDate = date || dayjs().format('YYYY-MM-DD');
+      setScheduleLoading(true);
+      try {
+        const response = await api.schedule.fetch(token, profileId, targetDate);
+        setScheduleData({
+          scheduled: response.scheduled || [],
+          unscheduled: response.unscheduled || [],
+          activeProfile: response.activeProfile,
+        });
+        if (response?.profiles) {
+          setProfiles(response.profiles);
+        }
+        if (response?.activeProfile) {
+          setActiveProfile(response.activeProfile);
+          if (!activeProfileId) {
+            setActiveProfileId(response.activeProfile.profileId);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load schedule', err);
+        showToast(err.message || '스케줄 정보를 불러오지 못했습니다.', 'error');
+      } finally {
+        setScheduleLoading(false);
+      }
+    },
+    [showToast, token, activeProfileId]
+  );
 
   const loadCoreData = useCallback(
     async (profileId, { withLoading = true } = {}) => {
@@ -115,7 +144,10 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
 
   const refreshData = useCallback(async () => {
     await loadCoreData(activeProfileId, { withLoading: false });
-  }, [activeProfileId, loadCoreData]);
+    if (activeProfileId) {
+      await loadSchedule(activeProfileId, scheduleDate);
+    }
+  }, [activeProfileId, loadCoreData, loadSchedule, scheduleDate]);
 
   const loadHistory = useCallback(
     async (profileId) => {
@@ -164,10 +196,13 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     if (activeView === 'store' && activeProfileId) {
       loadStore(activeProfileId);
     }
+    if (activeView === 'schedule' && activeProfileId) {
+      loadSchedule(activeProfileId, scheduleDate);
+    }
     if (activeView === 'history' && activeProfileId) {
       loadHistory(activeProfileId);
     }
-  }, [activeProfileId, activeView, loadStore, loadHistory]);
+  }, [activeProfileId, activeView, loadStore, loadSchedule, loadHistory, scheduleDate]);
 
   const handleViewChange = (viewKey) => {
     setActiveView(viewKey);
@@ -194,138 +229,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     } catch (err) {
       console.error('Failed to create task', err);
       showToast(err.message || '작업 추가에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleCompleteTask = async (taskId) => {
-    if (!activeProfileId) return;
-    try {
-      const response = await api.queues.completeTask(token, taskId, activeProfileId);
-      await refreshData();
-      if (response?.profile) {
-        onUserUpdate(response.profile);
-      }
-
-      if (response?.gamification) {
-        const { xpGain, coinsGain, levelUp, unlockedBadges } = response.gamification;
-        let msg = `🎉 작업 완료! XP ${xpGain} / 코인 ${coinsGain} 획득`;
-        if (levelUp) msg += ' · 레벨 업!';
-        if (unlockedBadges && unlockedBadges.length > 0) {
-          msg += ` · 배지 ${unlockedBadges.join(', ')}`;
-        }
-        showToast(msg, 'success');
-      } else {
-        showToast('작업을 완료했습니다.', 'success');
-      }
-    } catch (err) {
-      console.error('Failed to complete task', err);
-      showToast(err.message || '작업 완료 처리에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleUpdateTask = async (taskId, updates) => {
-    if (!activeProfileId) return;
-    try {
-      await api.queues.updateTask(token, taskId, updates, activeProfileId);
-      await refreshData();
-      showToast('작업을 수정했습니다.', 'info');
-    } catch (err) {
-      console.error('Failed to update task', err);
-      showToast(err.message || '작업 수정에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleDeleteTask = async (taskId) => {
-    if (!activeProfileId) return;
-    try {
-      await api.queues.deleteTask(token, taskId, activeProfileId);
-      await refreshData();
-      showToast('작업을 삭제했습니다.', 'info');
-    } catch (err) {
-      console.error('Failed to delete task', err);
-      showToast(err.message || '작업 삭제에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleReopenTask = async (taskId) => {
-    if (!activeProfileId) return;
-    try {
-      const response = await api.queues.reopenTask(token, taskId, activeProfileId);
-      await refreshData();
-      if (response?.profile) {
-        onUserUpdate(response.profile);
-      }
-      showToast('작업을 다시 진행 목록으로 이동했습니다.', 'info');
-    } catch (err) {
-      console.error('Failed to reopen task', err);
-      showToast(err.message || '작업 되돌리기에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleReorderTasks = async (queueKey, orderedIds) => {
-    if (!activeProfileId) return;
-    try {
-      const response = await api.queues.reorder(
-        token,
-        {
-          queue: queueKey,
-          orderedTaskIds: orderedIds,
-        },
-        activeProfileId
-      );
-      setQueuesData((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          queues: {
-            ...prev.queues,
-            [queueKey]: response.queue,
-          },
-        };
-      });
-    } catch (err) {
-      console.error('Failed to reorder', err);
-      showToast(err.message || '작업 순서를 변경하지 못했습니다.', 'error');
-    }
-  };
-
-  const handleAddMember = async (payload) => {
-    try {
-      const response = await api.household.create(token, payload);
-      setProfiles(response.members);
-      showToast(`${payload.name} 님을 팀에 추가했습니다.`, 'success');
-    } catch (err) {
-      console.error('Failed to add member', err);
-      showToast(err.message || '구성원 추가에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleUpdateMember = async (profileId, payload) => {
-    try {
-      const response = await api.household.update(token, profileId, payload);
-      setProfiles(response.members);
-      showToast('구성원 정보를 업데이트했습니다.', 'info');
-    } catch (err) {
-      console.error('Failed to update member', err);
-      showToast(err.message || '구성원 수정에 실패했습니다.', 'error');
-    }
-  };
-
-  const handleRemoveMember = async (profileId) => {
-    try {
-      const response = await api.household.remove(token, profileId);
-      setProfiles(response.members);
-      if (profileId === activeProfileId) {
-        const fallback = response.members[0]?.profileId || null;
-        setActiveProfileId(fallback);
-        setActiveProfile(
-          response.members.find((profile) => profile.profileId === fallback) || null
-        );
-      }
-      showToast('구성원을 삭제했습니다.', 'warning');
-    } catch (err) {
-      console.error('Failed to remove member', err);
-      showToast(err.message || '구성원 삭제에 실패했습니다.', 'error');
+      throw err;
     }
   };
 
@@ -344,6 +248,41 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     } catch (err) {
       console.error('Failed to create store item', err);
       showToast(err.message || '상품 등록에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleScheduleTask = async (taskId, startISO, endISO) => {
+    try {
+      await api.queues.updateTask(token, taskId, {
+        scheduledStart: startISO,
+        scheduledEnd: endISO,
+      }, activeProfileId);
+      await Promise.all([
+        loadSchedule(activeProfileId, scheduleDate),
+        loadCoreData(activeProfileId, { withLoading: false }),
+      ]);
+      showToast('작업을 스케줄에 배치했습니다.', 'success');
+    } catch (err) {
+      console.error('Failed to schedule task', err);
+      showToast(err.message || '작업 스케줄링에 실패했습니다.', 'error');
+      throw err;
+    }
+  };
+
+  const handleUnscheduleTask = async (task) => {
+    try {
+      await api.queues.updateTask(token, task._id, {
+        scheduledStart: null,
+        scheduledEnd: null,
+      }, activeProfileId);
+      await Promise.all([
+        loadSchedule(activeProfileId, scheduleDate),
+        loadCoreData(activeProfileId, { withLoading: false }),
+      ]);
+      showToast('작업을 스케줄에서 제거했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to unschedule task', err);
+      showToast(err.message || '작업 스케줄 해제에 실패했습니다.', 'error');
       throw err;
     }
   };
@@ -406,7 +345,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     `진행 Deep ${deepPending} · Admin ${adminPending}`,
   ];
 
-  const renderMainView = () => (
+  const renderScheduleView = () => (
     <>
       <section className={`stats-panel ${statsExpanded ? 'expanded' : 'collapsed'}`}>
         <div className="stats-toggle-bar">
@@ -431,34 +370,22 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
           </div>
         )}
       </section>
-      <FocusBanner deepQueue={deepQueue} adminQueue={adminQueue} />
-      <div className="queues-container">
-        <QueueColumn
-          queue={deepQueue}
-          activeProfile={activeProfile}
-          isActive
-          onActivate={() => {}}
-          onCreateTask={handleCreateTask}
-          onCompleteTask={handleCompleteTask}
-          onDeleteTask={handleDeleteTask}
-          onUpdateTask={handleUpdateTask}
-          onReorder={handleReorderTasks}
-        />
-        <QueueColumn
-          queue={adminQueue}
-          activeProfile={activeProfile}
-          isActive={false}
-          onActivate={() => {}}
-          onCreateTask={handleCreateTask}
-          onCompleteTask={handleCompleteTask}
-          onDeleteTask={handleDeleteTask}
-          onUpdateTask={handleUpdateTask}
-          onReorder={handleReorderTasks}
-        />
-      </div>
-      <div className="bottom-grid">
-        <RecentCompleted items={recentCompleted} onReopen={handleReopenTask} />
-      </div>
+      <ScheduleView
+        date={scheduleDate}
+        onDateChange={(newDate) => {
+          setScheduleDate(newDate);
+          if (activeProfileId) {
+            loadSchedule(activeProfileId, newDate);
+          }
+        }}
+        scheduled={scheduleData.scheduled || []}
+        unscheduled={scheduleData.unscheduled || []}
+        loading={scheduleLoading}
+        onScheduleTask={(taskId, start, end) => handleScheduleTask(taskId, start, end)}
+        onUnscheduleTask={(task) => handleUnscheduleTask(task)}
+        onRefresh={() => loadSchedule(activeProfileId, scheduleDate)}
+        onCreateTask={handleCreateTask}
+      />
     </>
   );
 
@@ -501,7 +428,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   } else if (activeView === 'household') {
     currentView = renderHouseholdView();
   } else {
-    currentView = renderMainView();
+    currentView = renderScheduleView();
   }
 
   if (loading && !initialProfileSynced) {
