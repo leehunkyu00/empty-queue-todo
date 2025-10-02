@@ -1515,7 +1515,9 @@ button {
 
 .schedule-block-meta {
   display: grid;
-  gap: 0.15rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
   min-width: 0;
 }
 
