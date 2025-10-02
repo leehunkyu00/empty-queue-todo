@@ -1293,6 +1293,7 @@ button {
   display: grid;
   grid-template-columns: 80px 1fr minmax(260px, 320px);
   gap: clamp(1rem, 2vw, 1.5rem);
+  align-items: start;
 }
 
 .schedule-hours {
@@ -1425,6 +1426,14 @@ button {
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
+  position: sticky;
+  top: 6rem;
+  align-self: start;
+  max-height: calc(100vh - 7rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.25rem;
+  min-height: 0;
 }
 
 .schedule-form {
@@ -2071,6 +2080,10 @@ button {
 
   .schedule-sidebar {
     grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 }
 
