@@ -128,7 +128,7 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
   );
 }
 
-function CurrentBlockBanner({ block, onToggleTask, now }) {
+function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now }) {
   if (!block) {
     return (
       <section className="current-block-banner idle">
@@ -142,7 +142,7 @@ function CurrentBlockBanner({ block, onToggleTask, now }) {
   }
 
   const isDeep = block.type === 'deep';
-  const pendingTasks = (block.tasks || []).filter((task) => task.status !== 'completed');
+  const tasks = block.tasks || [];
 
   return (
     <section className={`current-block-banner ${isDeep ? 'deep' : 'admin'}`}>
@@ -154,22 +154,28 @@ function CurrentBlockBanner({ block, onToggleTask, now }) {
         <p>{block.title || (isDeep ? '집중력을 높이기 위한 깊은 몰입 시간입니다.' : '빠르게 처리할 수 있는 작업들을 한 번에 끝내보세요.')}</p>
       </div>
       <div className="current-block-tasks">
-        {pendingTasks.length === 0 ? (
-          <p>완료해야 할 작업이 없습니다.</p>
+        {tasks.length === 0 ? (
+          <p>배정된 작업이 없습니다.</p>
         ) : (
           <ul>
-            {pendingTasks.map((task) => (
-              <li key={task._id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={task.status === 'completed'}
-                    onChange={() => onToggleTask(task, task.status !== 'completed')}
-                  />
-                  {task.title}
-                </label>
-              </li>
-            ))}
+            {tasks.map((task) => {
+              const isCompleted = task.status === 'completed';
+              return (
+                <li key={task._id} className={isCompleted ? 'completed' : ''}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={isCompleted}
+                      onChange={() => onToggleTask(task, !isCompleted)}
+                    />
+                    {task.title}
+                  </label>
+                  <button type="button" onClick={() => onUnassignTask(task)}>
+                    해제
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -277,7 +283,7 @@ function ScheduleView({
 
   return (
     <div className="schedule-container">
-      <CurrentBlockBanner block={currentBlock} onToggleTask={onToggleTask} now={now} />
+      <CurrentBlockBanner block={currentBlock} onToggleTask={onToggleTask} onUnassignTask={onUnassignTask} now={now} />
 
       <header className="schedule-header">
         <div className="schedule-date-controls">
@@ -343,47 +349,21 @@ function ScheduleView({
                       <strong>{block.title || (block.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
                       <span className="schedule-block-time-range">{formatTimeRange(block.start, block.end)}</span>
                     </div>
-                    <button type="button" className="schedule-block-delete" onClick={() => onDeleteBlock(block)}>
-                      삭제
-                    </button>
+                    <div className="schedule-block-tools">
+                      {block.type === 'deep' ? (
+                        <div className="schedule-block-summary deep">
+                          {block.tasks && block.tasks.length > 0 ? block.tasks[0].title : '작업을 배치하세요'}
+                        </div>
+                      ) : (
+                        <div className="schedule-block-summary admin">
+                          {(block.tasks || []).length > 0 ? `${block.tasks.length}건 배정됨` : '작업을 배치하세요'}
+                        </div>
+                      )}
+                      <button type="button" className="schedule-block-delete" onClick={() => onDeleteBlock(block)}>
+                        삭제
+                      </button>
+                    </div>
                   </header>
-                  <ul className="schedule-block-tasklist">
-                    {(block.tasks || []).map((task) => {
-                      const isCompleted = task.status === 'completed';
-                      return (
-                        <li key={task._id} className={isCompleted ? 'completed' : ''}>
-                          <div className="schedule-block-task-main">
-                            <span className={`schedule-block-task-indicator ${isCompleted ? 'completed' : 'pending'}`} aria-hidden="true" />
-                            <div>
-                              <strong>{task.title}</strong>
-                              {task.description ? <small>{task.description}</small> : null}
-                            </div>
-                          </div>
-                          <div className="schedule-block-task-actions">
-                            <button
-                              type="button"
-                              className="schedule-block-task-toggle"
-                              onClick={() => onToggleTask(task, !isCompleted)}
-                            >
-                              {isCompleted ? '되돌리기' : '완료'}
-                            </button>
-                            <button type="button" className="schedule-block-task-unassign" onClick={() => onUnassignTask(task)}>
-                              해제
-                            </button>
-                          </div>
-                        </li>
-                      );
-                    })}
-                    {block.type === 'deep' && (!block.tasks || block.tasks.filter((task) => task.status !== 'completed').length === 0) ? (
-                      <li className="schedule-empty">작업을 드래그하여 배치하세요</li>
-                    ) : null}
-                    {block.type === 'admin' && (!block.tasks || block.tasks.length === 0) ? (
-                      <li className="schedule-empty">작업을 드래그하여 배치하세요</li>
-                    ) : null}
-                  </ul>
-                  {block.type === 'deep' ? (
-                    <p className="schedule-block-hint">Deep Work 블록에는 하나의 작업만 둘 수 있어요.</p>
-                  ) : null}
                 </DroppableBlock>
               ))}
             </div>
