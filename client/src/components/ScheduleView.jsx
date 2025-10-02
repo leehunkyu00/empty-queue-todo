@@ -348,21 +348,32 @@ function ScheduleView({
                     </button>
                   </header>
                   <ul className="schedule-block-tasklist">
-                    {(block.tasks || []).map((task) => (
-                      <li key={task._id}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={task.status === 'completed'}
-                            onChange={() => onToggleTask(task, task.status !== 'completed')}
-                          />
-                          {task.title}
-                        </label>
-                        <button type="button" onClick={() => onUnassignTask(task)}>
-                          해제
-                        </button>
-                      </li>
-                    ))}
+                    {(block.tasks || []).map((task) => {
+                      const isCompleted = task.status === 'completed';
+                      return (
+                        <li key={task._id} className={isCompleted ? 'completed' : ''}>
+                          <div className="schedule-block-task-main">
+                            <span className={`schedule-block-task-indicator ${isCompleted ? 'completed' : 'pending'}`} aria-hidden="true" />
+                            <div>
+                              <strong>{task.title}</strong>
+                              {task.description ? <small>{task.description}</small> : null}
+                            </div>
+                          </div>
+                          <div className="schedule-block-task-actions">
+                            <button
+                              type="button"
+                              className="schedule-block-task-toggle"
+                              onClick={() => onToggleTask(task, !isCompleted)}
+                            >
+                              {isCompleted ? '되돌리기' : '완료'}
+                            </button>
+                            <button type="button" className="schedule-block-task-unassign" onClick={() => onUnassignTask(task)}>
+                              해제
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                     {block.type === 'deep' && (!block.tasks || block.tasks.filter((task) => task.status !== 'completed').length === 0) ? (
                       <li className="schedule-empty">작업을 드래그하여 배치하세요</li>
                     ) : null}
