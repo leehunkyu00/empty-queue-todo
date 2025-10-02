@@ -118,6 +118,11 @@ export const api = {
           date,
         },
       }),
+    createBlock: (token, data) => request('/schedule/blocks', { method: 'POST', token, data }),
+    updateBlock: (token, blockId, data) => request(`/schedule/blocks/${blockId}`, { method: 'PATCH', token, data }),
+    deleteBlock: (token, blockId) => request(`/schedule/blocks/${blockId}`, { method: 'DELETE', token }),
+    assignTask: (token, blockId, data) => request(`/schedule/blocks/${blockId}/assign`, { method: 'POST', token, data }),
+    unassignTask: (token, taskId) => request(`/schedule/tasks/${taskId}/unassign`, { method: 'POST', token }),
   },
   progress: {
     dashboard: (token, profileId) =>

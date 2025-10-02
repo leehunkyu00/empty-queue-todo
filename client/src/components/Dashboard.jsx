@@ -24,7 +24,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
   const [progressData, setProgressData] = useState(null);
   const [historyData, setHistoryData] = useState(null);
   const [storeData, setStoreData] = useState({ items: [], purchases: [], averageReward: 65 });
-  const [scheduleData, setScheduleData] = useState({ scheduled: [], unscheduled: [] });
+  const [scheduleData, setScheduleData] = useState({ blocks: [], unscheduled: [] });
   const [scheduleDate, setScheduleDate] = useState(dayjs().format('YYYY-MM-DD'));
 
   const [loading, setLoading] = useState(true);
@@ -59,9 +59,10 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
       try {
         const response = await api.schedule.fetch(token, profileId, targetDate);
         setScheduleData({
-          scheduled: response.scheduled || [],
+          blocks: response.blocks || [],
           unscheduled: response.unscheduled || [],
           activeProfile: response.activeProfile,
+          date: response.date || targetDate,
         });
         if (response?.profiles) {
           setProfiles(response.profiles);
@@ -251,39 +252,86 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
-  const handleScheduleTask = async (taskId, startISO, endISO) => {
+  const handleCreateBlock = async ({ start, end, type, title }) => {
+    if (!activeProfileId) {
+      showToast('먼저 계정을 선택해주세요.', 'warning');
+      return;
+    }
     try {
-      await api.queues.updateTask(token, taskId, {
-        scheduledStart: startISO,
-        scheduledEnd: endISO,
-      }, activeProfileId);
-      await Promise.all([
-        loadSchedule(activeProfileId, scheduleDate),
-        loadCoreData(activeProfileId, { withLoading: false }),
-      ]);
-      showToast('작업을 스케줄에 배치했습니다.', 'success');
+      await api.schedule.createBlock(token, {
+        profileId: activeProfileId,
+        start,
+        end,
+        type,
+        title: title?.trim() || undefined,
+      });
+      await loadSchedule(activeProfileId, scheduleDate);
+      showToast('새로운 시간 블록을 만들었습니다.', 'success');
     } catch (err) {
-      console.error('Failed to schedule task', err);
-      showToast(err.message || '작업 스케줄링에 실패했습니다.', 'error');
+      console.error('Failed to create schedule block', err);
+      showToast(err.message || '블록 생성에 실패했습니다.', 'error');
       throw err;
     }
   };
 
-  const handleUnscheduleTask = async (task) => {
+  const handleDeleteBlock = async (block) => {
     try {
-      await api.queues.updateTask(token, task._id, {
-        scheduledStart: null,
-        scheduledEnd: null,
-      }, activeProfileId);
+      await api.schedule.deleteBlock(token, block._id);
+      await loadSchedule(activeProfileId, scheduleDate);
+      showToast('블록을 삭제했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to delete schedule block', err);
+      showToast(err.message || '블록 삭제에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleAssignTask = async ({ blockId, taskId, start, end }) => {
+    try {
+      await api.schedule.assignTask(token, blockId, {
+        taskId,
+        start,
+        end,
+      });
       await Promise.all([
         loadSchedule(activeProfileId, scheduleDate),
         loadCoreData(activeProfileId, { withLoading: false }),
       ]);
-      showToast('작업을 스케줄에서 제거했습니다.', 'info');
+      showToast('작업을 블록에 배치했습니다.', 'success');
     } catch (err) {
-      console.error('Failed to unschedule task', err);
-      showToast(err.message || '작업 스케줄 해제에 실패했습니다.', 'error');
-      throw err;
+      console.error('Failed to assign task to block', err);
+      showToast(err.message || '작업 배치에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleUnassignTask = async (task) => {
+    try {
+      await api.schedule.unassignTask(token, task._id);
+      await Promise.all([
+        loadSchedule(activeProfileId, scheduleDate),
+        loadCoreData(activeProfileId, { withLoading: false }),
+      ]);
+      showToast('작업을 블록에서 제거했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to unassign task', err);
+      showToast(err.message || '작업 해제에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleToggleTask = async (task, shouldComplete) => {
+    try {
+      if (shouldComplete) {
+        await api.queues.completeTask(token, task._id, activeProfileId);
+      } else {
+        await api.queues.reopenTask(token, task._id, activeProfileId);
+      }
+      await Promise.all([
+        loadSchedule(activeProfileId, scheduleDate),
+        loadCoreData(activeProfileId, { withLoading: false }),
+      ]);
+      showToast(shouldComplete ? '작업을 완료했습니다.' : '작업을 다시 진행 상태로 변경했습니다.', shouldComplete ? 'success' : 'info');
+    } catch (err) {
+      console.error('Failed to toggle task status', err);
+      showToast(err.message || '작업 상태 변경에 실패했습니다.', 'error');
     }
   };
 
@@ -378,13 +426,15 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
             loadSchedule(activeProfileId, newDate);
           }
         }}
-        scheduled={scheduleData.scheduled || []}
+        blocks={scheduleData.blocks || []}
         unscheduled={scheduleData.unscheduled || []}
         loading={scheduleLoading}
-        onScheduleTask={(taskId, start, end) => handleScheduleTask(taskId, start, end)}
-        onUnscheduleTask={(task) => handleUnscheduleTask(task)}
+        onCreateBlock={handleCreateBlock}
+        onDeleteBlock={handleDeleteBlock}
+        onAssignTask={handleAssignTask}
+        onUnassignTask={handleUnassignTask}
+        onToggleTask={handleToggleTask}
         onRefresh={() => loadSchedule(activeProfileId, scheduleDate)}
-        onCreateTask={handleCreateTask}
       />
     </>
   );

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const dayjs = require('dayjs');
 const Task = require('../models/Task');
 const User = require('../models/User');
+const ScheduleBlock = require('../models/ScheduleBlock');
 const {
   applyTaskCompletion,
   XP_BY_DIFFICULTY,
@@ -484,29 +485,47 @@ async function getSchedule(req, res) {
     const dayStart = targetDay.startOf('day').toDate();
     const dayEnd = targetDay.endOf('day').toDate();
 
-    const [scheduled, unscheduled] = await Promise.all([
-      Task.find({
-        user: userId,
-        assignedProfileId: activeProfile.profileId,
-        scheduledStart: { $gte: dayStart, $lte: dayEnd },
-      })
-        .sort({ scheduledStart: 1 })
-        .lean(),
-      Task.find({
-        user: userId,
-        assignedProfileId: activeProfile.profileId,
-        status: 'pending',
-        $or: [
-          { scheduledStart: { $exists: false } },
-          { scheduledStart: null },
-        ],
-      })
-        .sort({ queue: 1, order: 1 })
-        .lean(),
-    ]);
+    const blocks = await ScheduleBlock.find({
+      user: userId,
+      profileId: activeProfile.profileId,
+      start: { $lte: dayEnd },
+      end: { $gte: dayStart },
+    })
+      .sort({ start: 1 })
+      .lean();
+
+    const scheduledTasks = await Task.find({
+      user: userId,
+      assignedProfileId: activeProfile.profileId,
+      scheduledBlock: { $ne: null },
+    })
+      .lean();
+
+    const unscheduled = await Task.find({
+      user: userId,
+      assignedProfileId: activeProfile.profileId,
+      status: 'pending',
+      $or: [
+        { scheduledBlock: { $exists: false } },
+        { scheduledBlock: null },
+      ],
+    })
+      .sort({ queue: 1, order: 1 })
+      .lean();
+
+    const blocksWithTasks = blocks.map((block) => ({
+      ...block,
+      tasks: scheduledTasks
+        .filter((task) => task.scheduledBlock && task.scheduledBlock.toString() === block._id.toString())
+        .sort((a, b) => {
+          const aStart = a.scheduledStart ? new Date(a.scheduledStart).valueOf() : 0;
+          const bStart = b.scheduledStart ? new Date(b.scheduledStart).valueOf() : 0;
+          return aStart - bStart;
+        }),
+    }));
 
     return res.json({
-      scheduled,
+      blocks: blocksWithTasks,
       unscheduled,
       activeProfile: sanitizeProfile(userDoc, activeProfile),
       profiles: listProfiles(userDoc),
@@ -515,6 +534,184 @@ async function getSchedule(req, res) {
   } catch (error) {
     console.error('getSchedule error:', error);
     return res.status(500).json({ message: 'Failed to load schedule' });
+  }
+}
+
+async function createScheduleBlock(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const { profileId, start, end, type, title, notes } = req.body;
+
+    if (!start || !end || !type) {
+      return res.status(400).json({ message: 'start, end, and type are required' });
+    }
+
+    if (!['deep', 'admin'].includes(type)) {
+      return res.status(400).json({ message: 'type must be deep or admin' });
+    }
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf()) || endDate <= startDate) {
+      return res.status(400).json({ message: 'Invalid start/end range' });
+    }
+
+    const userDoc = await User.findById(userId);
+    if (!userDoc) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const activeProfile = getActiveProfile(userDoc, profileId);
+    if (!activeProfile) {
+      return res.status(400).json({ message: 'No household profiles available' });
+    }
+
+    const block = await ScheduleBlock.create({
+      user: userId,
+      profileId: activeProfile.profileId,
+      profileName: activeProfile.name,
+      type,
+      title: title?.trim(),
+      notes: notes?.trim(),
+      start: startDate,
+      end: endDate,
+    });
+
+    return res.status(201).json({ block });
+  } catch (error) {
+    console.error('createScheduleBlock error:', error);
+    return res.status(500).json({ message: 'Failed to create schedule block' });
+  }
+}
+
+async function updateScheduleBlock(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const { blockId } = req.params;
+    const { start, end, type, title, notes } = req.body;
+
+    const block = await ScheduleBlock.findOne({ _id: blockId, user: userId });
+    if (!block) {
+      return res.status(404).json({ message: 'Schedule block not found' });
+    }
+
+    if (start || end) {
+      const startDate = start ? new Date(start) : block.start;
+      const endDate = end ? new Date(end) : block.end;
+      if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf()) || endDate <= startDate) {
+        return res.status(400).json({ message: 'Invalid start/end range' });
+      }
+      block.start = startDate;
+      block.end = endDate;
+    }
+
+    if (type) {
+      if (!['deep', 'admin'].includes(type)) {
+        return res.status(400).json({ message: 'type must be deep or admin' });
+      }
+      block.type = type;
+    }
+
+    if (title !== undefined) block.title = title?.trim();
+    if (notes !== undefined) block.notes = notes?.trim();
+
+    await block.save();
+    return res.json({ block });
+  } catch (error) {
+    console.error('updateScheduleBlock error:', error);
+    return res.status(500).json({ message: 'Failed to update schedule block' });
+  }
+}
+
+async function deleteScheduleBlock(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const { blockId } = req.params;
+
+    const block = await ScheduleBlock.findOne({ _id: blockId, user: userId });
+    if (!block) {
+      return res.status(404).json({ message: 'Schedule block not found' });
+    }
+
+    await Task.updateMany({ scheduledBlock: block._id }, { $set: { scheduledBlock: null, scheduledStart: null, scheduledEnd: null } });
+    await block.deleteOne();
+
+    return res.json({ message: 'Schedule block removed' });
+  } catch (error) {
+    console.error('deleteScheduleBlock error:', error);
+    return res.status(500).json({ message: 'Failed to delete schedule block' });
+  }
+}
+
+async function assignTaskToBlock(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const { blockId } = req.params;
+    const { taskId, start, end } = req.body;
+
+    const block = await ScheduleBlock.findOne({ _id: blockId, user: userId });
+    if (!block) {
+      return res.status(404).json({ message: 'Schedule block not found' });
+    }
+
+    const task = await Task.findOne({ _id: taskId, user: userId });
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    if (task.assignedProfileId !== block.profileId) {
+      return res.status(400).json({ message: 'Task belongs to a different profile' });
+    }
+
+    if (block.type === 'deep') {
+      const existing = await Task.countDocuments({ scheduledBlock: block._id, status: 'pending', _id: { $ne: task._id } });
+      if (existing >= 1) {
+        return res.status(400).json({ message: 'Deep work 블록에는 하나의 작업만 배치할 수 있습니다.' });
+      }
+    }
+
+    let startDate = block.start;
+    let endDate = block.end;
+    if (start && end) {
+      const providedStart = new Date(start);
+      const providedEnd = new Date(end);
+      if (!Number.isNaN(providedStart.valueOf()) && !Number.isNaN(providedEnd.valueOf()) && providedEnd > providedStart) {
+        startDate = providedStart;
+        endDate = providedEnd;
+      }
+    }
+
+    task.scheduledBlock = block._id;
+    task.scheduledStart = startDate;
+    task.scheduledEnd = endDate;
+    await task.save();
+
+    return res.json({ task });
+  } catch (error) {
+    console.error('assignTaskToBlock error:', error);
+    return res.status(500).json({ message: 'Failed to assign task to block' });
+  }
+}
+
+async function unassignTaskFromBlock(req, res) {
+  try {
+    const userId = req.auth.userId;
+    const { taskId } = req.params;
+
+    const task = await Task.findOne({ _id: taskId, user: userId });
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    task.scheduledBlock = null;
+    task.scheduledStart = null;
+    task.scheduledEnd = null;
+    await task.save();
+
+    return res.json({ task });
+  } catch (error) {
+    console.error('unassignTaskFromBlock error:', error);
+    return res.status(500).json({ message: 'Failed to unassign task from block' });
   }
 }
 
@@ -593,5 +790,10 @@ module.exports = {
   deleteTask,
   reopenTask,
   getSchedule,
+  createScheduleBlock,
+  updateScheduleBlock,
+  deleteScheduleBlock,
+  assignTaskToBlock,
+  unassignTaskFromBlock,
   reorderTasks,
 };

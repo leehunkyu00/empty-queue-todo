@@ -75,6 +75,10 @@ const taskSchema = new mongoose.Schema(
       },
       default: null,
     },
+    scheduledBlock: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ScheduleBlock',
+    },
   },
   {
     timestamps: true,

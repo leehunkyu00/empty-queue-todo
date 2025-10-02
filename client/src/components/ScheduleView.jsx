@@ -1,242 +1,290 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
+const MINUTE_HEIGHT = 1; // 1px per minute keeps the canvas at 60px per hour
 const MINUTES_IN_DAY = 24 * 60;
-const MINUTES_HEIGHT = 1; // 1px per minute
 
-function formatTime(dateString) {
-  if (!dateString) return '';
-  return dayjs(dateString).format('HH:mm');
+function formatTimeRange(start, end) {
+  const startTime = start ? dayjs(start).format('HH:mm') : '';
+  const endTime = end ? dayjs(end).format('HH:mm') : '';
+  return `${startTime} - ${endTime}`;
 }
 
-function ScheduleBlock({ task, dayStart, onUnschedule }) {
-  const start = task.scheduledStart ? dayjs(task.scheduledStart) : null;
-  const end = task.scheduledEnd ? dayjs(task.scheduledEnd) : null;
-  if (!start) return null;
-  const minutesFromStart = start.diff(dayStart, 'minute');
-  const duration = end ? Math.max(end.diff(start, 'minute'), 15) : 60;
-  const top = Math.max(minutesFromStart, 0) * MINUTES_HEIGHT;
-  const height = Math.min(duration, MINUTES_IN_DAY - minutesFromStart) * MINUTES_HEIGHT;
+function computePosition(start, end, dayStart) {
+  const startDate = dayjs(start);
+  const endDate = dayjs(end);
+  const top = Math.max(0, startDate.diff(dayStart, 'minute')) * MINUTE_HEIGHT;
+  const durationMinutes = Math.max(15, endDate.diff(startDate, 'minute'));
+  const height = durationMinutes * MINUTE_HEIGHT;
+  return { top, height };
+}
 
-  const queueClass = task.queue === 'deep' ? 'block-deep' : 'block-admin';
+function DraggableTask({ task }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `task-${task._id}`,
+    data: { task },
+  });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.6 : 1,
+  };
+  return (
+    <li ref={setNodeRef} style={style} className="schedule-task-card" {...attributes} {...listeners}>
+      <div>
+        <strong>{task.title}</strong>
+        <span className={`schedule-task-queue queue-${task.queue}`}>{task.queue === 'deep' ? 'Deep Work' : 'Admin'}</span>
+      </div>
+      {task.estimatedMinutes ? <small>{task.estimatedMinutes}분 예상</small> : null}
+    </li>
+  );
+}
 
+function DroppableBlock({ block, children }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `block-${block._id}`,
+    data: { block },
+  });
   return (
     <div
-      className={`schedule-block ${queueClass}`}
-      style={{ top, height }}
-      role="button"
-      tabIndex={0}
-      onClick={() => onUnschedule(task)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          onUnschedule(task);
-        }
-      }}
+      ref={setNodeRef}
+      className={`schedule-block block-${block.type} ${isOver ? 'dropping' : ''}`}
+      style={{ top: block.position.top, height: block.position.height }}
     >
-      <span className="schedule-block-time">
-        {formatTime(task.scheduledStart)} - {formatTime(task.scheduledEnd)}
-      </span>
-      <strong>{task.title}</strong>
-      <span className="schedule-block-meta">{task.assignedProfileName}</span>
-      <span className="schedule-block-queue">{task.queue === 'deep' ? 'Deep Work' : 'Admin'}</span>
-      <small className="schedule-block-action">클릭하여 스케줄 해제</small>
+      {children}
     </div>
   );
 }
 
-function ScheduleForm({ date, unscheduled, onSubmit, loading }) {
-  const [selectedTask, setSelectedTask] = useState('');
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
-  const [error, setError] = useState(null);
-
-  const deepTasks = useMemo(() => unscheduled.filter((task) => task.queue === 'deep'), [unscheduled]);
-  const adminTasks = useMemo(() => unscheduled.filter((task) => task.queue === 'admin'), [unscheduled]);
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    if (!selectedTask) {
-      setError('스케줄할 작업을 선택해주세요.');
-      return;
-    }
-    if (!startTime || !endTime) {
-      setError('시작과 종료 시간을 입력해주세요.');
-      return;
-    }
-    const start = dayjs(`${date}T${startTime}`);
-    const end = dayjs(`${date}T${endTime}`);
-    if (!start.isValid() || !end.isValid() || !end.isAfter(start)) {
-      setError('올바른 시간 범위를 입력해주세요.');
-      return;
-    }
-    try {
-      await onSubmit({ taskId: selectedTask, start: start.toISOString(), end: end.toISOString() });
-      setError(null);
-    } catch (err) {
-      setError(err?.message || '스케줄링에 실패했습니다.');
-    }
-  };
-
-  return (
-    <form className="schedule-form" onSubmit={handleSubmit}>
-      <h3>블록 만들기</h3>
-      <label>
-        작업 선택
-        <select value={selectedTask} onChange={(event) => setSelectedTask(event.target.value)}>
-          <option value="">작업을 선택하세요</option>
-          {deepTasks.length > 0 && (
-            <optgroup label="Deep Work">
-              {deepTasks.map((task) => (
-                <option key={task._id} value={task._id}>
-                  {task.title}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {adminTasks.length > 0 && (
-            <optgroup label="Admin">
-              {adminTasks.map((task) => (
-                <option key={task._id} value={task._id}>
-                  {task.title}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-      </label>
-      <div className="schedule-time-inputs">
-        <label>
-          시작
-          <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
-        </label>
-        <label>
-          종료
-          <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
-        </label>
-      </div>
-      {error ? <p className="schedule-error">{error}</p> : null}
-      <button type="submit" disabled={loading || !unscheduled.length}>
-        스케줄에 추가
-      </button>
-    </form>
-  );
-}
-
-function NewTaskForm({ onCreateTask, loading }) {
-  const [form, setForm] = useState({
-    queue: 'deep',
-    title: '',
-    description: '',
-    difficulty: 'medium',
-  });
+function NewBlockModal({ draft, onSubmit, onCancel }) {
+  const [type, setType] = useState('deep');
+  const [title, setTitle] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    if (!form.title.trim()) {
-      setError('작업 제목을 입력해주세요.');
-      return;
+  useEffect(() => {
+    if (draft) {
+      setType('deep');
+      setTitle('');
     }
+  }, [draft]);
+
+  if (!draft) return null;
+
+  const handleCreate = async () => {
+    if (submitting) return;
     setSubmitting(true);
-    setError(null);
     try {
-      await onCreateTask({
-        title: form.title.trim(),
-        description: form.description.trim(),
-        queue: form.queue,
-        difficulty: form.difficulty,
-      });
-      setForm({ queue: 'deep', title: '', description: '', difficulty: 'medium' });
-      setError(null);
-    } catch (err) {
-      console.error('Failed to create task', err);
-      setError(err.message || '작업 생성에 실패했습니다.');
+      await onSubmit({ ...draft, type, title: title.trim() });
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form className="schedule-form" onSubmit={handleSubmit}>
-      <h3>새 작업 추가</h3>
-      <label>
-        구분
-        <select name="queue" value={form.queue} onChange={handleChange}>
-          <option value="deep">Deep Work</option>
-          <option value="admin">Admin</option>
-        </select>
-      </label>
-      <label>
-        제목
-        <input
-          type="text"
-          name="title"
-          value={form.title}
-          onChange={handleChange}
-          placeholder="예: 전략 문서 작성"
-          required
-          disabled={submitting || loading}
-        />
-      </label>
-      <label>
-        메모
-        <textarea
-          name="description"
-          rows={2}
-          value={form.description}
-          onChange={handleChange}
-          placeholder="선택 메모"
-          disabled={submitting || loading}
-        />
-      </label>
-      <label>
-        난이도
-        <select name="difficulty" value={form.difficulty} onChange={handleChange} disabled={submitting || loading}>
-          <option value="easy">쉬움</option>
-          <option value="medium">보통</option>
-          <option value="hard">어려움</option>
-        </select>
-      </label>
-      {error ? <p className="schedule-error">{error}</p> : null}
-      <button type="submit" disabled={submitting || loading}>
-        {submitting ? '추가 중...' : '작업 추가'}
-      </button>
-    </form>
+    <div className="schedule-manager-overlay" role="dialog" aria-modal="true">
+      <div className="schedule-manager">
+        <header>
+          <h3>블록 만들기</h3>
+          <button type="button" className="close-button" onClick={onCancel}>
+            닫기
+          </button>
+        </header>
+        <p>
+          {dayjs(draft.start).format('HH:mm')} - {dayjs(draft.end).format('HH:mm')} 시간대를 어떤 작업 모드로 사용할까요?
+        </p>
+        <div className="block-type-selector">
+          <label>
+            <input type="radio" name="blockType" value="deep" checked={type === 'deep'} onChange={() => setType('deep')} />
+            Deep Work
+          </label>
+          <label>
+            <input type="radio" name="blockType" value="admin" checked={type === 'admin'} onChange={() => setType('admin')} />
+            Admin
+          </label>
+        </div>
+        <label>
+          제목 (선택)
+          <input type="text" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 아침 집중" />
+        </label>
+        <div className="schedule-manager-actions">
+          <button type="button" onClick={handleCreate} disabled={submitting}>
+            {submitting ? '만드는 중...' : '만들기'}
+          </button>
+          <button type="button" className="danger" onClick={onCancel}>
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CurrentBlockBanner({ block, onToggleTask, now }) {
+  if (!block) {
+    return (
+      <section className="current-block-banner idle">
+        <div>
+          <h3>지금은 자유 시간입니다</h3>
+          <p>예약된 블록이 없어요. 원하는 작업을 스케줄에 배치해보세요.</p>
+        </div>
+        <time>{dayjs(now).format('HH:mm')}</time>
+      </section>
+    );
+  }
+
+  const isDeep = block.type === 'deep';
+  const pendingTasks = (block.tasks || []).filter((task) => task.status !== 'completed');
+
+  return (
+    <section className={`current-block-banner ${isDeep ? 'deep' : 'admin'}`}>
+      <div className="current-block-meta">
+        <h3>
+          {isDeep ? '현재 모드: Deep Work' : '현재 모드: Admin'}
+          <span>{formatTimeRange(block.start, block.end)}</span>
+        </h3>
+        <p>{block.title || (isDeep ? '집중력을 높이기 위한 깊은 몰입 시간입니다.' : '빠르게 처리할 수 있는 작업들을 한 번에 끝내보세요.')}</p>
+      </div>
+      <div className="current-block-tasks">
+        {pendingTasks.length === 0 ? (
+          <p>완료해야 할 작업이 없습니다.</p>
+        ) : (
+          <ul>
+            {pendingTasks.map((task) => (
+              <li key={task._id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={task.status === 'completed'}
+                    onChange={() => onToggleTask(task, task.status !== 'completed')}
+                  />
+                  {task.title}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <time>{dayjs(now).format('HH:mm')}</time>
+    </section>
   );
 }
 
 function ScheduleView({
   date,
   onDateChange,
-  scheduled,
-  unscheduled,
+  blocks = [],
+  unscheduled = [],
   loading,
-  onScheduleTask,
-  onUnscheduleTask,
+  onCreateBlock,
+  onDeleteBlock,
+  onAssignTask,
+  onUnassignTask,
+  onToggleTask,
   onRefresh,
-  onCreateTask,
 }) {
   const dayStart = useMemo(() => dayjs(date).startOf('day'), [date]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [activeDragTask, setActiveDragTask] = useState(null);
+  const [selection, setSelection] = useState(null);
+  const [blockDraft, setBlockDraft] = useState(null);
+  const canvasRef = useRef(null);
+  const [now, setNow] = useState(() => dayjs());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(dayjs()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const blocksWithPosition = useMemo(
+    () =>
+      (blocks || []).map((block) => ({
+        ...block,
+        position: computePosition(block.start, block.end, dayStart),
+      })),
+    [blocks, dayStart]
+  );
+
+  const isToday = useMemo(() => dayjs(date).isSame(now, 'day'), [date, now]);
+  const currentBlock = useMemo(() => {
+    if (!isToday) return null;
+    const nowValue = now.valueOf();
+    return (
+      blocks.find((block) => {
+        const start = dayjs(block.start).valueOf();
+        const end = dayjs(block.end).valueOf();
+        return start <= nowValue && nowValue < end;
+      }) || null
+    );
+  }, [blocks, isToday, now]);
+
+  const handlePointerDown = (event) => {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest('.schedule-block')) {
+      return;
+    }
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const minute = Math.max(0, Math.min(event.clientY - bounds.top, MINUTES_IN_DAY));
+    setSelection({ startMinute: minute, endMinute: minute });
+  };
+
+  const handlePointerMove = (event) => {
+    if (!selection) return;
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const minute = Math.max(0, Math.min(event.clientY - bounds.top, MINUTES_IN_DAY));
+    setSelection((prev) => (prev ? { ...prev, endMinute: minute } : null));
+  };
+
+  const handlePointerUp = () => {
+    if (!selection) return;
+    const { startMinute, endMinute } = selection;
+    const startMinuteRounded = Math.floor(Math.min(startMinute, endMinute) / 15) * 15;
+    const endMinuteRounded = Math.ceil(Math.max(startMinute, endMinute) / 15) * 15;
+    setSelection(null);
+    if (!onCreateBlock) return;
+    if (endMinuteRounded - startMinuteRounded < 15) {
+      return;
+    }
+    const start = dayjs(date).startOf('day').add(startMinuteRounded, 'minute').toISOString();
+    const end = dayjs(date).startOf('day').add(endMinuteRounded, 'minute').toISOString();
+    setBlockDraft({ start, end });
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    setActiveDragTask(null);
+    if (!over || !active?.data?.current?.task) return;
+    const block = over.data?.current?.block;
+    if (!block) return;
+    await onAssignTask({
+      blockId: block._id,
+      taskId: active.data.current.task._id,
+      start: block.start,
+      end: block.end,
+    });
+  };
 
   return (
     <div className="schedule-container">
+      <CurrentBlockBanner block={currentBlock} onToggleTask={onToggleTask} now={now} />
+
       <header className="schedule-header">
         <div className="schedule-date-controls">
           <button type="button" onClick={() => onDateChange(dayjs(date).subtract(1, 'day').format('YYYY-MM-DD'))}>
             ◀
           </button>
-          <input
-            type="date"
-            value={date}
-            onChange={(event) => onDateChange(event.target.value)}
-          />
+          <input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} />
           <button type="button" onClick={() => onDateChange(dayjs(date).add(1, 'day').format('YYYY-MM-DD'))}>
             ▶
           </button>
@@ -251,51 +299,116 @@ function ScheduleView({
         </div>
       </header>
 
-      <div className="schedule-board">
-        <div className="schedule-hours">
-          {HOURS.map((hour) => (
-            <div key={hour} className="schedule-hour-row">
-              <span>{`${String(hour).padStart(2, '0')}:00`}</span>
-            </div>
-          ))}
-        </div>
-        <div className="schedule-canvas">
-          <div className="schedule-lines">
+      <DndContext
+        sensors={sensors}
+        onDragStart={(event) => setActiveDragTask(event.active.data.current?.task || null)}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="schedule-board">
+          <div className="schedule-hours">
             {HOURS.map((hour) => (
-              <div key={hour} className="schedule-line" style={{ top: hour * 60 * MINUTES_HEIGHT }} />
+              <div key={hour} className="schedule-hour-row">
+                <span>{String(hour).padStart(2, '0')}:00</span>
+              </div>
             ))}
           </div>
-          <div className="schedule-blocks">
-            {scheduled.map((task) => (
-              <ScheduleBlock key={task._id} task={task} dayStart={dayStart} onUnschedule={onUnscheduleTask} />
-            ))}
+          <div
+            className="schedule-canvas"
+            ref={canvasRef}
+            onMouseDown={handlePointerDown}
+            onMouseMove={handlePointerMove}
+            onMouseUp={handlePointerUp}
+            onMouseLeave={() => setSelection(null)}
+          >
+            <div className="schedule-lines">
+              {HOURS.map((hour) => (
+                <div key={hour} className="schedule-line" style={{ top: hour * 60 * MINUTE_HEIGHT }} />
+              ))}
+            </div>
+            {selection ? (
+              <div
+                className="schedule-selection"
+                style={{
+                  top: Math.min(selection.startMinute, selection.endMinute),
+                  height: Math.abs(selection.endMinute - selection.startMinute),
+                }}
+              />
+            ) : null}
+            <div className="schedule-blocks">
+              {blocksWithPosition.map((block) => (
+                <DroppableBlock key={block._id} block={block}>
+                  <header className="schedule-block-header">
+                    <div>
+                      <span className="schedule-block-type">{block.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
+                      <strong>{block.title || (block.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
+                      <span className="schedule-block-time-range">{formatTimeRange(block.start, block.end)}</span>
+                    </div>
+                    <button type="button" className="schedule-block-delete" onClick={() => onDeleteBlock(block)}>
+                      삭제
+                    </button>
+                  </header>
+                  <ul className="schedule-block-tasklist">
+                    {(block.tasks || []).map((task) => (
+                      <li key={task._id}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={task.status === 'completed'}
+                            onChange={() => onToggleTask(task, task.status !== 'completed')}
+                          />
+                          {task.title}
+                        </label>
+                        <button type="button" onClick={() => onUnassignTask(task)}>
+                          해제
+                        </button>
+                      </li>
+                    ))}
+                    {block.type === 'deep' && (!block.tasks || block.tasks.filter((task) => task.status !== 'completed').length === 0) ? (
+                      <li className="schedule-empty">작업을 드래그하여 배치하세요</li>
+                    ) : null}
+                    {block.type === 'admin' && (!block.tasks || block.tasks.length === 0) ? (
+                      <li className="schedule-empty">작업을 드래그하여 배치하세요</li>
+                    ) : null}
+                  </ul>
+                  {block.type === 'deep' ? (
+                    <p className="schedule-block-hint">Deep Work 블록에는 하나의 작업만 둘 수 있어요.</p>
+                  ) : null}
+                </DroppableBlock>
+              ))}
+            </div>
+          </div>
+          <div className="schedule-sidebar">
+            <section className="schedule-unscheduled">
+              <h3>미배정 작업 ({unscheduled.length})</h3>
+              {unscheduled.length === 0 ? (
+                <p className="schedule-empty">모든 작업이 스케줄 되었습니다!</p>
+              ) : (
+                <ul>
+                  {unscheduled.map((task) => (
+                    <DraggableTask key={task._id} task={task} />
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
         </div>
-        <div className="schedule-sidebar">
-          <ScheduleForm
-            date={date}
-            unscheduled={unscheduled}
-            loading={loading}
-            onSubmit={({ taskId, start, end }) => onScheduleTask(taskId, start, end)}
-          />
-          <NewTaskForm onCreateTask={onCreateTask} loading={loading} />
-          <section className="schedule-unscheduled">
-            <h3>미배정 작업 ({unscheduled.length})</h3>
-            {unscheduled.length === 0 ? (
-              <p className="schedule-empty">모든 작업이 스케줄 되었습니다!</p>
-            ) : (
-              <ul>
-                {unscheduled.map((task) => (
-                  <li key={task._id}>
-                    <strong>{task.title}</strong>
-                    <span>{task.queue === 'deep' ? 'Deep Work' : 'Admin'}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
-      </div>
+        <DragOverlay>
+          {activeDragTask ? <div className="schedule-task-card drag-overlay">{activeDragTask.title}</div> : null}
+        </DragOverlay>
+      </DndContext>
+
+      <NewBlockModal
+        draft={blockDraft}
+        onCancel={() => setBlockDraft(null)}
+        onSubmit={async ({ start, end, type, title }) => {
+          try {
+            await onCreateBlock({ start, end, type, title });
+            setBlockDraft(null);
+          } catch (error) {
+            // handled via toast in parent
+          }
+        }}
+      />
     </div>
   );
 }
