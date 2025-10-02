@@ -57,7 +57,7 @@ function DroppableBlock({ block, children, onDoubleClick, onResizeStart }) {
   return (
     <div
       ref={setNodeRef}
-      className={`schedule-block block-${block.type} ${isOver ? 'dropping' : ''}`}
+      className={`schedule-block block-${block.type} ${block.compact ? 'compact' : ''} ${isOver ? 'dropping' : ''}`}
       style={{ top: block.position.top, height: block.position.height }}
       onDoubleClick={onDoubleClick}
       title="더블클릭해서 편집"
@@ -382,10 +382,14 @@ function ScheduleView({
         const preview = resizePreview?.blockId === block._id ? resizePreview : null;
         const start = preview ? preview.start : block.start;
         const end = preview ? preview.end : block.end;
+        const startDate = dayjs(start);
+        const endDate = dayjs(end);
+        const durationMinutes = Math.max(endDate.diff(startDate, 'minute'), 0);
         return {
           ...block,
           start,
           end,
+          durationMinutes,
           position: computePosition(start, end, dayStart),
         };
       }),
@@ -645,12 +649,12 @@ function ScheduleView({
               {blocksWithPosition.map((block) => (
                 <DroppableBlock
                   key={block._id}
-                  block={block}
+                  block={{ ...block, compact: block.durationMinutes <= 30 }}
                   onDoubleClick={() => setEditingBlock(block)}
                   onResizeStart={handleResizePointerDown}
                 >
                   <header className="schedule-block-header">
-                    <div>
+                    <div className="schedule-block-meta">
                       <span className="schedule-block-type">{block.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
                       <strong>{block.title || (block.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
                       <span className="schedule-block-time-range">{formatTimeRange(block.start, block.end)}</span>

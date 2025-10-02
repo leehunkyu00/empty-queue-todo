@@ -1369,6 +1369,7 @@ button {
   font-size: 0.75rem;
   line-height: 1.15;
   overflow: hidden;
+  min-height: 16px;
 }
 
 .schedule-block:hover {
@@ -1389,6 +1390,7 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
+  min-height: 1.1em;
 }
 
 .schedule-block-action {
@@ -1505,16 +1507,16 @@ button {
 }
 
 .schedule-block-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.4rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem;
 }
 
-.schedule-block-header > div {
-  display: flex;
-  flex-direction: column;
+.schedule-block-meta {
+  display: grid;
   gap: 0.15rem;
+  min-width: 0;
 }
 
 .schedule-block-type {
@@ -1547,9 +1549,7 @@ button {
 }
 
 .schedule-block-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  display: contents;
 }
 
 .schedule-block-summary {
@@ -1559,10 +1559,67 @@ button {
   font-weight: 600;
   background: rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.95);
-  max-width: 70%;
+  max-width: 100%;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+}
+
+.schedule-block.compact {
+  padding: 0;
+  font-size: 0.65rem;
+  line-height: 1.05;
+}
+
+.schedule-block.compact .schedule-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.schedule-block.compact .schedule-block-type {
+  font-size: 0.55rem;
+  padding: 0.05rem 0.3rem;
+}
+
+.schedule-block.compact .schedule-block-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.schedule-block.compact .schedule-block-type {
+  flex-shrink: 0;
+}
+
+.schedule-block.compact strong {
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.schedule-block.compact .schedule-block-time-range {
+  font-size: 0.6rem;
+  flex-shrink: 0;
+}
+
+.schedule-block.compact .schedule-block-summary {
+  font-size: 0.6rem;
+  padding: 0.2rem 0.5rem;
+  white-space: normal;
+  line-height: 1.15;
+  justify-self: stretch;
+  text-align: right;
+  word-break: keep-all;
+  flex-shrink: 0;
 }
 
 .schedule-editor-header-actions {
