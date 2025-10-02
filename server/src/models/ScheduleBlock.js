@@ -38,6 +38,24 @@ const scheduleBlockSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    startMinuteOfDay: {
+      type: Number,
+      min: 0,
+      max: 24 * 60,
+    },
+    endMinuteOfDay: {
+      type: Number,
+      min: 0,
+      max: 24 * 60,
+    },
+    isRecurring: {
+      type: Boolean,
+      default: true,
+    },
+    daysOfWeek: {
+      type: [Number],
+      default: undefined,
+    },
   },
   {
     timestamps: true,
@@ -45,6 +63,7 @@ const scheduleBlockSchema = new mongoose.Schema(
 );
 
 scheduleBlockSchema.index({ user: 1, profileId: 1, start: 1 });
+scheduleBlockSchema.index({ user: 1, profileId: 1, startMinuteOfDay: 1 });
 
 scheduleBlockSchema.set('toJSON', {
   transform: (_doc, ret) => {

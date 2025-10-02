@@ -57,6 +57,97 @@ function sanitizeProfile(userDoc, profile) {
   };
 }
 
+const MINUTES_IN_DAY = 24 * 60;
+const MIN_BLOCK_DURATION_MINUTES = 15;
+
+const VALID_WEEKDAY_VALUES = new Set([0, 1, 2, 3, 4, 5, 6]);
+
+function normalizeDaysOfWeek(values) {
+  if (!Array.isArray(values)) {
+    return undefined;
+  }
+  const normalized = Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && VALID_WEEKDAY_VALUES.has(value))
+    )
+  ).sort((a, b) => a - b);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function blockOverlapsDay(block, dayStart, dayEnd) {
+  const blockStart = dayjs(block?.start);
+  const blockEnd = dayjs(block?.end);
+  if (!blockStart.isValid() || !blockEnd.isValid()) {
+    return false;
+  }
+  return blockStart.isBefore(dayEnd) && blockEnd.isAfter(dayStart);
+}
+
+function blockAppliesOnDay(block, targetDay, dayStart, dayEnd) {
+  const recurring = block?.isRecurring !== false;
+  if (!recurring) {
+    return blockOverlapsDay(block, dayStart, dayEnd);
+  }
+  if (Array.isArray(block?.daysOfWeek) && block.daysOfWeek.length > 0) {
+    return block.daysOfWeek.includes(targetDay.day());
+  }
+  return true;
+}
+
+function deriveMinuteOfDay(value) {
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) {
+    return null;
+  }
+  return parsed.diff(parsed.startOf('day'), 'minute');
+}
+
+function resolveBlockMinutes(block) {
+  let startMinute = Number.isFinite(block?.startMinuteOfDay)
+    ? block.startMinuteOfDay
+    : deriveMinuteOfDay(block?.start);
+  let endMinute = Number.isFinite(block?.endMinuteOfDay)
+    ? block.endMinuteOfDay
+    : deriveMinuteOfDay(block?.end);
+
+  if (!Number.isFinite(startMinute)) {
+    startMinute = 9 * 60; // default to 09:00 if data is missing
+  }
+  startMinute = Math.max(0, Math.min(startMinute, MINUTES_IN_DAY - MIN_BLOCK_DURATION_MINUTES));
+
+  if (!Number.isFinite(endMinute)) {
+    endMinute = startMinute + 60;
+  }
+  endMinute = Math.max(startMinute + MIN_BLOCK_DURATION_MINUTES, Math.min(endMinute, MINUTES_IN_DAY));
+
+  return { startMinute, endMinute };
+}
+
+function buildBlockInstanceForDay(block, targetDay) {
+  const { startMinute, endMinute } = resolveBlockMinutes(block);
+  const isRecurring = block?.isRecurring !== false;
+  if (!isRecurring) {
+    const startDate = dayjs(block?.start);
+    const endDate = dayjs(block?.end);
+    const dayStartFallback = targetDay.startOf('day');
+    return {
+      start: startDate.isValid() ? startDate.toDate() : dayStartFallback.add(startMinute, 'minute').toDate(),
+      end: endDate.isValid() ? endDate.toDate() : dayStartFallback.add(endMinute, 'minute').toDate(),
+      startMinute,
+      endMinute,
+    };
+  }
+  const dayStart = targetDay.startOf('day');
+  return {
+    start: dayStart.add(startMinute, 'minute').toDate(),
+    end: dayStart.add(endMinute, 'minute').toDate(),
+    startMinute,
+    endMinute,
+  };
+}
+
 async function getQueues(req, res) {
   try {
     const userId = req.auth.userId;
@@ -474,22 +565,29 @@ async function getSchedule(req, res) {
       return res.status(400).json({ message: 'No household profiles available' });
     }
 
-    const dayStart = targetDay.startOf('day').toDate();
-    const dayEnd = targetDay.endOf('day').toDate();
+    const dayStart = targetDay.startOf('day');
+    const dayEnd = targetDay.endOf('day');
+    const dayStartDate = dayStart.toDate();
+    const dayEndDate = dayEnd.toDate();
 
-    const blocks = await ScheduleBlock.find({
+    const rawBlocks = await ScheduleBlock.find({
       user: userId,
       profileId: activeProfile.profileId,
-      start: { $lte: dayEnd },
-      end: { $gte: dayStart },
     })
-      .sort({ start: 1 })
+      .sort({ startMinuteOfDay: 1, start: 1 })
       .lean();
+
+    const blocks = rawBlocks.filter((block) => blockAppliesOnDay(block, targetDay, dayStart, dayEnd));
 
     const scheduledTasks = await Task.find({
       user: userId,
       assignedProfileId: activeProfile.profileId,
       scheduledBlock: { $ne: null },
+      $or: [
+        { scheduledStart: { $gte: dayStartDate, $lt: dayEndDate } },
+        { scheduledStart: { $exists: false } },
+        { scheduledStart: null },
+      ],
     })
       .lean();
 
@@ -498,23 +596,47 @@ async function getSchedule(req, res) {
       assignedProfileId: activeProfile.profileId,
       status: 'pending',
       $or: [
-        { scheduledBlock: { $exists: false } },
-        { scheduledBlock: null },
+        { queue: 'deep' },
+        {
+          queue: 'admin',
+          $or: [
+            { scheduledBlock: { $exists: false } },
+            { scheduledBlock: null },
+          ],
+        },
       ],
     })
       .sort({ queue: 1, order: 1 })
       .lean();
 
-    const blocksWithTasks = blocks.map((block) => ({
-      ...block,
-      tasks: scheduledTasks
-        .filter((task) => task.scheduledBlock && task.scheduledBlock.toString() === block._id.toString())
+    const blocksWithTasks = blocks.map((block) => {
+      const instance = buildBlockInstanceForDay(block, targetDay);
+      const tasksForBlock = scheduledTasks
+        .filter((task) => {
+          if (!task.scheduledBlock || task.scheduledBlock.toString() !== block._id.toString()) {
+            return false;
+          }
+          if (!task.scheduledStart) {
+            return true;
+          }
+          const scheduledDate = dayjs(task.scheduledStart);
+          return scheduledDate.isSame(targetDay, 'day');
+        })
         .sort((a, b) => {
           const aStart = a.scheduledStart ? new Date(a.scheduledStart).valueOf() : 0;
           const bStart = b.scheduledStart ? new Date(b.scheduledStart).valueOf() : 0;
           return aStart - bStart;
-        }),
-    }));
+        });
+
+      const daysOfWeek = block.isRecurring !== false ? normalizeDaysOfWeek(block.daysOfWeek) : undefined;
+      return {
+        ...block,
+        isRecurring: block.isRecurring !== false,
+        daysOfWeek,
+        ...instance,
+        tasks: tasksForBlock,
+      };
+    });
 
     return res.json({
       blocks: blocksWithTasks,
@@ -532,7 +654,7 @@ async function getSchedule(req, res) {
 async function createScheduleBlock(req, res) {
   try {
     const userId = req.auth.userId;
-    const { profileId, start, end, type, title, notes } = req.body;
+    const { profileId, start, end, type, title, notes, recurring, isRecurring, daysOfWeek } = req.body;
 
     if (!start || !end || !type) {
       return res.status(400).json({ message: 'start, end, and type are required' });
@@ -544,9 +666,19 @@ async function createScheduleBlock(req, res) {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf()) || endDate <= startDate) {
+    if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf())) {
       return res.status(400).json({ message: 'Invalid start/end range' });
     }
+
+    const startMinute = startDate.getHours() * 60 + startDate.getMinutes();
+    const endMinute = endDate.getHours() * 60 + endDate.getMinutes();
+    if (endMinute <= startMinute) {
+      return res.status(400).json({ message: 'Invalid start/end range' });
+    }
+
+    const recurringFlag = recurring ?? isRecurring;
+    const isRecurringBlock = recurringFlag !== false;
+    const normalizedDays = isRecurringBlock ? normalizeDaysOfWeek(daysOfWeek) : undefined;
 
     const userDoc = await User.findById(userId);
     if (!userDoc) {
@@ -567,6 +699,10 @@ async function createScheduleBlock(req, res) {
       notes: notes?.trim(),
       start: startDate,
       end: endDate,
+      startMinuteOfDay: startMinute,
+      endMinuteOfDay: endMinute,
+      isRecurring: isRecurringBlock,
+      daysOfWeek: normalizedDays,
     });
 
     return res.status(201).json({ block });
@@ -580,7 +716,7 @@ async function updateScheduleBlock(req, res) {
   try {
     const userId = req.auth.userId;
     const { blockId } = req.params;
-    const { start, end, type, title, notes } = req.body;
+    const { start, end, type, title, notes, recurring, isRecurring, daysOfWeek } = req.body;
 
     const block = await ScheduleBlock.findOne({ _id: blockId, user: userId });
     if (!block) {
@@ -590,11 +726,32 @@ async function updateScheduleBlock(req, res) {
     if (start || end) {
       const startDate = start ? new Date(start) : block.start;
       const endDate = end ? new Date(end) : block.end;
-      if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf()) || endDate <= startDate) {
+      if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf())) {
         return res.status(400).json({ message: 'Invalid start/end range' });
       }
+
+      let startMinute = Number.isFinite(block.startMinuteOfDay)
+        ? block.startMinuteOfDay
+        : deriveMinuteOfDay(startDate);
+      let endMinute = Number.isFinite(block.endMinuteOfDay)
+        ? block.endMinuteOfDay
+        : deriveMinuteOfDay(endDate);
+
+      if (start) {
+        startMinute = startDate.getHours() * 60 + startDate.getMinutes();
+      }
+      if (end) {
+        endMinute = endDate.getHours() * 60 + endDate.getMinutes();
+      }
+
+      if (endMinute <= startMinute) {
+        return res.status(400).json({ message: 'Invalid start/end range' });
+      }
+
       block.start = startDate;
       block.end = endDate;
+      block.startMinuteOfDay = startMinute;
+      block.endMinuteOfDay = endMinute;
     }
 
     if (type) {
@@ -604,8 +761,30 @@ async function updateScheduleBlock(req, res) {
       block.type = type;
     }
 
+    if (recurring !== undefined || isRecurring !== undefined) {
+      const nextRecurring = (recurring ?? isRecurring) !== false;
+      block.isRecurring = nextRecurring;
+      if (!nextRecurring) {
+        block.daysOfWeek = undefined;
+      }
+    }
+
+    if (daysOfWeek !== undefined) {
+      if (block.isRecurring !== false) {
+        block.daysOfWeek = normalizeDaysOfWeek(daysOfWeek);
+      } else {
+        block.daysOfWeek = undefined;
+      }
+    }
+
     if (title !== undefined) block.title = title?.trim();
     if (notes !== undefined) block.notes = notes?.trim();
+
+    if (!Number.isFinite(block.startMinuteOfDay) || !Number.isFinite(block.endMinuteOfDay)) {
+      const { startMinute, endMinute } = resolveBlockMinutes(block);
+      block.startMinuteOfDay = startMinute;
+      block.endMinuteOfDay = endMinute;
+    }
 
     await block.save();
     return res.json({ block });
@@ -662,15 +841,26 @@ async function assignTaskToBlock(req, res) {
       }
     }
 
-    let startDate = block.start;
-    let endDate = block.end;
+    let startDate;
+    let endDate;
+
     if (start && end) {
-      const providedStart = new Date(start);
-      const providedEnd = new Date(end);
-      if (!Number.isNaN(providedStart.valueOf()) && !Number.isNaN(providedEnd.valueOf()) && providedEnd > providedStart) {
-        startDate = providedStart;
-        endDate = providedEnd;
+      const providedStart = dayjs(start);
+      const providedEnd = dayjs(end);
+      if (providedStart.isValid() && providedEnd.isValid() && providedEnd.isAfter(providedStart)) {
+        startDate = providedStart.toDate();
+        endDate = providedEnd.toDate();
       }
+    }
+
+    if (!startDate || !endDate) {
+      const referenceDay = task.scheduledStart
+        ? dayjs(task.scheduledStart)
+        : dayjs(start || block.start || new Date());
+      const { startMinute, endMinute } = resolveBlockMinutes(block);
+      const dayStart = referenceDay.startOf('day');
+      startDate = dayStart.add(startMinute, 'minute').toDate();
+      endDate = dayStart.add(endMinute, 'minute').toDate();
     }
 
     task.scheduledBlock = block._id;
