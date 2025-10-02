@@ -76,11 +76,11 @@ async function getDashboard(req, res) {
         },
       ]),
       Task.find({ user: userId, queue: 'deep', status: 'pending', ...profileFilter })
-        .sort({ dueDate: 1, order: 1 })
+        .sort({ order: 1, createdAt: 1 })
         .limit(3)
         .lean(),
       Task.find({ user: userId, queue: 'admin', status: 'pending', ...profileFilter })
-        .sort({ dueDate: 1, order: 1 })
+        .sort({ order: 1, createdAt: 1 })
         .limit(3)
         .lean(),
     ]);

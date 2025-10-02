@@ -223,8 +223,14 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
       showToast('먼저 계정을 선택해주세요.', 'warning');
       return;
     }
+    const requestPayload = {
+      ...payload,
+    };
+    if (!requestPayload.assignedProfileId) {
+      requestPayload.assignedProfileId = activeProfileId;
+    }
     try {
-      await api.queues.createTask(token, payload, activeProfileId);
+      await api.queues.createTask(token, requestPayload, activeProfileId);
       await refreshData();
       showToast('새로운 작업을 큐에 추가했습니다.', 'success');
     } catch (err) {
@@ -249,6 +255,44 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     } catch (err) {
       console.error('Failed to create store item', err);
       showToast(err.message || '상품 등록에 실패했습니다.', 'error');
+    }
+  };
+
+  const handleUpdateTaskDetails = async (taskId, updates) => {
+    if (!activeProfileId) {
+      showToast('먼저 계정을 선택해주세요.', 'warning');
+      return;
+    }
+    try {
+      await api.queues.updateTask(token, taskId, updates, activeProfileId);
+      await Promise.all([
+        loadSchedule(activeProfileId, scheduleDate),
+        loadCoreData(activeProfileId, { withLoading: false }),
+      ]);
+      showToast('작업 정보를 수정했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to update task details', err);
+      showToast(err.message || '작업 수정에 실패했습니다.', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!activeProfileId) {
+      showToast('먼저 계정을 선택해주세요.', 'warning');
+      return;
+    }
+    try {
+      await api.queues.deleteTask(token, taskId, activeProfileId);
+      await Promise.all([
+        loadSchedule(activeProfileId, scheduleDate),
+        loadCoreData(activeProfileId, { withLoading: false }),
+      ]);
+      showToast('작업을 삭제했습니다.', 'warning');
+    } catch (err) {
+      console.error('Failed to delete task', err);
+      showToast(err.message || '작업 삭제에 실패했습니다.', 'error');
+      throw err;
     }
   };
 
@@ -441,6 +485,10 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
         blocks={scheduleData.blocks || []}
         unscheduled={scheduleData.unscheduled || []}
         loading={scheduleLoading}
+        activeProfile={activeProfile}
+        onCreateTask={handleCreateTask}
+        onUpdateTask={handleUpdateTaskDetails}
+        onDeleteTask={handleDeleteTask}
         onCreateBlock={handleCreateBlock}
         onDeleteBlock={handleDeleteBlock}
         onUpdateBlock={handleUpdateBlock}

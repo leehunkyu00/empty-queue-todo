@@ -113,8 +113,6 @@ async function createTask(req, res) {
       description = '',
       queue,
       difficulty = 'medium',
-      estimatedMinutes,
-      dueDate,
       priority = 0,
       assignedProfileId,
       scheduledStart,
@@ -162,8 +160,6 @@ async function createTask(req, res) {
       description,
       queue,
       difficulty,
-      estimatedMinutes,
-      dueDate,
       priority,
       order,
       assignedProfileId: assigneeProfile.profileId,
@@ -202,8 +198,6 @@ async function updateTask(req, res) {
       title,
       description,
       difficulty,
-      estimatedMinutes,
-      dueDate,
       queue,
       priority,
       assignedProfileId,
@@ -217,8 +211,6 @@ async function updateTask(req, res) {
     if (title !== undefined) task.title = title;
     if (description !== undefined) task.description = description;
     if (difficulty !== undefined) task.difficulty = difficulty;
-    if (estimatedMinutes !== undefined) task.estimatedMinutes = estimatedMinutes;
-    if (dueDate !== undefined) task.dueDate = dueDate;
     if (priority !== undefined) task.priority = priority;
 
     if (assignedProfileId !== undefined && assignedProfileId !== originalProfileId) {

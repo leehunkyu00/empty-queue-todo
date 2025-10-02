@@ -29,22 +29,58 @@ function computePosition(start, end, dayStart) {
   return { top, height };
 }
 
-function DraggableTask({ task }) {
+function DraggableTask({ task, onDoubleClick, onDelete }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `task-${task._id}`,
     data: { task },
   });
+  const [isDeleting, setIsDeleting] = useState(false);
   const style = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.6 : 1,
   };
+  const stopPropagation = (event) => {
+    event.stopPropagation();
+  };
+  const handleDeleteClick = async (event) => {
+    if (!onDelete || isDeleting) return;
+    event.stopPropagation();
+    event.preventDefault();
+    setIsDeleting(true);
+    try {
+      await onDelete(task);
+    } catch (error) {
+      console.error('Failed to delete task', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
   return (
-    <li ref={setNodeRef} style={style} className="schedule-task-card" {...attributes} {...listeners}>
-      <div>
-        <strong>{task.title}</strong>
-        <span className={`schedule-task-queue queue-${task.queue}`}>{task.queue === 'deep' ? 'Deep Work' : 'Admin'}</span>
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="schedule-task-card"
+      onDoubleClick={onDoubleClick}
+      {...attributes}
+      {...listeners}
+    >
+      <div className="schedule-task-card-header">
+        <div className="schedule-task-card-meta">
+          <strong>{task.title}</strong>
+          <span className={`schedule-task-queue queue-${task.queue}`}>{task.queue === 'deep' ? 'Deep Work' : 'Admin'}</span>
+        </div>
+        {onDelete ? (
+          <button
+            type="button"
+            className="schedule-task-delete"
+            onPointerDown={stopPropagation}
+            onClick={handleDeleteClick}
+            disabled={isDeleting}
+          >
+            {isDeleting ? '삭제 중...' : '삭제'}
+          </button>
+        ) : null}
       </div>
-      {task.estimatedMinutes ? <small>{task.estimatedMinutes}분 예상</small> : null}
     </li>
   );
 }
@@ -321,12 +357,157 @@ function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now }) {
   );
 }
 
+function TaskEditorModal({ open, onClose, onSubmit, onDelete, activeProfile, task }) {
+  const preferredQueue = activeProfile?.focusModePreference === 'admin' ? 'admin' : 'deep';
+  const isEditing = Boolean(task);
+  const buildInitialForm = useCallback(
+    () => ({
+      title: task?.title || '',
+      description: task?.description || '',
+      queue: task?.queue || preferredQueue,
+      difficulty: task?.difficulty || 'medium',
+    }),
+    [task, preferredQueue]
+  );
+
+  const [form, setForm] = useState(() => buildInitialForm());
+  const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setForm(buildInitialForm());
+      setSubmitting(false);
+      setDeleting(false);
+    }
+  }, [open, buildInitialForm]);
+
+  if (!open) return null;
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!form.title.trim() || submitting) return;
+    if (!activeProfile) return;
+
+    setSubmitting(true);
+
+    const payload = {
+      queue: form.queue,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      difficulty: form.difficulty,
+    };
+
+    try {
+      await onSubmit(payload);
+      setForm(buildInitialForm());
+      onClose();
+    } catch (error) {
+      console.error('Failed to submit task', error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!isEditing || !onDelete || deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+      onClose();
+    } catch (error) {
+      console.error('Failed to delete task', error);
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="schedule-manager-overlay" role="dialog" aria-modal="true">
+      <div className="schedule-manager schedule-task-creator">
+        <header>
+          <h3>{isEditing ? '작업 수정' : '작업 만들기'}</h3>
+          <button type="button" className="close-button" onClick={onClose}>
+            닫기
+          </button>
+        </header>
+        <p className="schedule-task-assignee">
+          담당: {activeProfile?.name || '선택된 계정 없음'}
+        </p>
+        <form className="schedule-task-form" onSubmit={handleSubmit}>
+          <label>
+            작업 제목
+            <input
+              type="text"
+              name="title"
+              value={form.title}
+              onChange={handleChange}
+              placeholder="예: 사용자 인터뷰 정리"
+              required
+            />
+          </label>
+          <label>
+            작업 설명 (선택)
+            <textarea
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              placeholder="상세 내용을 적어두면 나중에 도움이 됩니다."
+            />
+          </label>
+          <div className="schedule-task-form-row">
+            <label>
+              큐 선택
+              <select name="queue" value={form.queue} onChange={handleChange}>
+                <option value="deep">Deep Work 큐</option>
+                <option value="admin">Admin 큐</option>
+              </select>
+            </label>
+            <label>
+              난이도
+              <select name="difficulty" value={form.difficulty} onChange={handleChange}>
+                <option value="easy">쉬움</option>
+                <option value="medium">보통</option>
+                <option value="hard">어려움</option>
+              </select>
+            </label>
+          </div>
+          <div className="schedule-manager-actions">
+            {isEditing && onDelete ? (
+              <button
+                type="button"
+                className="danger"
+                onClick={handleDelete}
+                disabled={submitting || deleting}
+              >
+                {deleting ? '삭제 중...' : '삭제'}
+              </button>
+            ) : null}
+            <button type="submit" disabled={submitting || deleting}>
+              {submitting ? (isEditing ? '수정 중...' : '추가 중...') : isEditing ? '변경 저장' : '작업 추가'}
+            </button>
+            <button type="button" className="ghost" onClick={onClose} disabled={submitting || deleting}>
+              취소
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function ScheduleView({
   date,
   onDateChange,
   blocks = [],
   unscheduled = [],
   loading,
+  activeProfile,
+  onCreateTask,
   onCreateBlock,
   onDeleteBlock,
   onUpdateBlock,
@@ -334,6 +515,8 @@ function ScheduleView({
   onUnassignTask,
   onToggleTask,
   onRefresh,
+  onUpdateTask,
+  onDeleteTask,
 }) {
   const dayStart = useMemo(() => dayjs(date).startOf('day'), [date]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -341,6 +524,8 @@ function ScheduleView({
   const [selection, setSelection] = useState(null);
   const [blockDraft, setBlockDraft] = useState(null);
   const [editingBlock, setEditingBlock] = useState(null);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const [hoverMinute, setHoverMinute] = useState(null);
   const [resizing, setResizing] = useState(null);
   const [resizePreview, setResizePreview] = useState(null);
@@ -361,6 +546,31 @@ function ScheduleView({
   useEffect(() => {
     resizePreviewRef.current = resizePreview;
   }, [resizePreview]);
+
+  useEffect(() => {
+    if (!onCreateTask) {
+      setTaskModalOpen(false);
+    }
+  }, [onCreateTask]);
+
+  useEffect(() => {
+    if (!activeProfile) {
+      setTaskModalOpen(false);
+      setEditingTask(null);
+    }
+  }, [activeProfile]);
+
+  useEffect(() => {
+    if (!onUpdateTask) {
+      setEditingTask(null);
+    }
+  }, [onUpdateTask]);
+
+  useEffect(() => {
+    if (!onDeleteTask) {
+      setEditingTask(null);
+    }
+  }, [onDeleteTask]);
 
   const snapToQuarterHour = useCallback((minute) => {
     if (minute === null || Number.isNaN(minute)) return null;
@@ -593,6 +803,16 @@ function ScheduleView({
           </button>
         </div>
         <div className="schedule-header-actions">
+          {onCreateTask ? (
+            <button
+              type="button"
+              className="schedule-create-task"
+              onClick={() => setTaskModalOpen(true)}
+              disabled={!activeProfile}
+            >
+              작업 추가
+            </button>
+          ) : null}
           <button type="button" onClick={onRefresh} className={loading ? 'refresh refreshing' : 'refresh'}>
             {loading ? '새로고침 중...' : '새로고침'}
           </button>
@@ -679,11 +899,28 @@ function ScheduleView({
             <section className="schedule-unscheduled">
               <h3>미배정 작업 ({unscheduled.length})</h3>
               {unscheduled.length === 0 ? (
-                <p className="schedule-empty">모든 작업이 스케줄 되었습니다!</p>
+                <div className="schedule-empty-state">
+                  <p className="schedule-empty">모든 작업이 스케줄 되었습니다!</p>
+                  {onCreateTask ? (
+                    <button
+                      type="button"
+                      className="schedule-empty-create"
+                      onClick={() => setTaskModalOpen(true)}
+                      disabled={!activeProfile}
+                    >
+                      새 작업 만들기
+                    </button>
+                  ) : null}
+                </div>
               ) : (
                 <ul>
                   {unscheduled.map((task) => (
-                    <DraggableTask key={task._id} task={task} />
+                    <DraggableTask
+                      key={task._id}
+                      task={task}
+                      onDoubleClick={onUpdateTask ? () => setEditingTask(task) : undefined}
+                      onDelete={onDeleteTask ? (currentTask) => onDeleteTask(currentTask._id) : undefined}
+                    />
                   ))}
                 </ul>
               )}
@@ -702,7 +939,7 @@ function ScheduleView({
           try {
             await onCreateBlock({ start, end, type, title });
             setBlockDraft(null);
-          } catch (error) {
+          } catch {
             // handled via toast in parent
           }
         }}
@@ -721,6 +958,24 @@ function ScheduleView({
           setEditingBlock(null);
         }}
       />
+      {onCreateTask ? (
+        <TaskEditorModal
+          open={taskModalOpen}
+          onClose={() => setTaskModalOpen(false)}
+          onSubmit={(payload) => onCreateTask(payload)}
+          activeProfile={activeProfile}
+        />
+      ) : null}
+      {onUpdateTask && editingTask ? (
+        <TaskEditorModal
+          open={Boolean(editingTask)}
+          onClose={() => setEditingTask(null)}
+          onSubmit={(payload) => onUpdateTask(editingTask._id, payload)}
+          onDelete={onDeleteTask ? () => onDeleteTask(editingTask._id) : undefined}
+          activeProfile={activeProfile}
+          task={editingTask}
+        />
+      ) : null}
     </div>
   );
 }

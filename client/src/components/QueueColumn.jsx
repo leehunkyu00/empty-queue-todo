@@ -117,11 +117,6 @@ function SortableTaskCard({
       <footer>
         <div className="task-meta">
           <span>담당: {task.assignedProfileName}</span>
-          {task.dueDate ? (
-            <span>
-              마감: {new Date(task.dueDate).toLocaleDateString()}
-            </span>
-          ) : null}
         </div>
         <div className="task-actions">
           <button type="button" onClick={() => onCompleteTask(task._id)}>
