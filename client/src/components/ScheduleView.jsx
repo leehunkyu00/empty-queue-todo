@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import {
   DndContext,
@@ -49,7 +49,7 @@ function DraggableTask({ task }) {
   );
 }
 
-function DroppableBlock({ block, children }) {
+function DroppableBlock({ block, children, onDoubleClick, onResizeStart }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `block-${block._id}`,
     data: { block },
@@ -59,8 +59,22 @@ function DroppableBlock({ block, children }) {
       ref={setNodeRef}
       className={`schedule-block block-${block.type} ${isOver ? 'dropping' : ''}`}
       style={{ top: block.position.top, height: block.position.height }}
+      onDoubleClick={onDoubleClick}
+      title="더블클릭해서 편집"
     >
+      <button
+        type="button"
+        className="schedule-block-resize-handle top"
+        onPointerDown={(event) => onResizeStart(event, block, 'start')}
+        aria-label="블록 시작 시간 조정"
+      />
       {children}
+      <button
+        type="button"
+        className="schedule-block-resize-handle bottom"
+        onPointerDown={(event) => onResizeStart(event, block, 'end')}
+        aria-label="블록 종료 시간 조정"
+      />
     </div>
   );
 }
@@ -118,6 +132,129 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
         <div className="schedule-manager-actions">
           <button type="button" onClick={handleCreate} disabled={submitting}>
             {submitting ? '만드는 중...' : '만들기'}
+          </button>
+          <button type="button" className="danger" onClick={onCancel}>
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
+  const [type, setType] = useState('deep');
+  const [title, setTitle] = useState('');
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
+  const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!block) return;
+    setType(block.type || 'deep');
+    setTitle(block.title || '');
+    setStartTime(dayjs(block.start).format('HH:mm'));
+    setEndTime(dayjs(block.end).format('HH:mm'));
+    setError(null);
+    setSubmitting(false);
+    setDeleting(false);
+  }, [block]);
+
+  if (!block) return null;
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setError(null);
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    let nextError = null;
+    if (
+      Number.isNaN(startHour) ||
+      Number.isNaN(startMinute) ||
+      Number.isNaN(endHour) ||
+      Number.isNaN(endMinute)
+    ) {
+      nextError = '시작/종료 시간을 다시 확인해주세요.';
+    }
+    const baseStart = dayjs(block.start).hour(startHour || 0).minute(startMinute || 0).second(0).millisecond(0);
+    const baseEnd = dayjs(block.end).hour(endHour || 0).minute(endMinute || 0).second(0).millisecond(0);
+    if (!nextError && !baseEnd.isAfter(baseStart)) {
+      nextError = '종료 시간은 시작 시간 이후여야 합니다.';
+    }
+    if (nextError) {
+      setError(nextError);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        type,
+        title: title?.trim() || undefined,
+        start: baseStart.toISOString(),
+        end: baseEnd.toISOString(),
+      });
+    } catch (err) {
+      setError(err?.message || '블록 저장에 실패했습니다.');
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } catch (err) {
+      setError(err?.message || '블록 삭제에 실패했습니다.');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="schedule-manager-overlay" role="dialog" aria-modal="true">
+      <div className="schedule-manager">
+        <header className="schedule-editor-header">
+          <h3>블록 수정</h3>
+          <div className="schedule-editor-header-actions">
+            <button type="button" className="danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? '삭제 중...' : '삭제'}
+            </button>
+            <button type="button" className="close-button" onClick={onCancel}>
+              닫기
+            </button>
+          </div>
+        </header>
+        <div className="block-type-selector">
+          <label>
+            <input type="radio" name="editBlockType" value="deep" checked={type === 'deep'} onChange={() => setType('deep')} />
+            Deep Work
+          </label>
+          <label>
+            <input type="radio" name="editBlockType" value="admin" checked={type === 'admin'} onChange={() => setType('admin')} />
+            Admin
+          </label>
+        </div>
+        <div className="schedule-time-inputs">
+          <label>
+            시작 시간
+            <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          </label>
+          <label>
+            종료 시간
+            <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+          </label>
+        </div>
+        <label>
+          제목
+          <input type="text" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="블록 제목" />
+        </label>
+        {error ? <p className="schedule-error">{error}</p> : null}
+        <div className="schedule-manager-actions">
+          <button type="button" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? '저장 중...' : '저장하기'}
           </button>
           <button type="button" className="danger" onClick={onCancel}>
             취소
@@ -192,6 +329,7 @@ function ScheduleView({
   loading,
   onCreateBlock,
   onDeleteBlock,
+  onUpdateBlock,
   onAssignTask,
   onUnassignTask,
   onToggleTask,
@@ -202,7 +340,13 @@ function ScheduleView({
   const [activeDragTask, setActiveDragTask] = useState(null);
   const [selection, setSelection] = useState(null);
   const [blockDraft, setBlockDraft] = useState(null);
+  const [editingBlock, setEditingBlock] = useState(null);
+  const [hoverMinute, setHoverMinute] = useState(null);
+  const [resizing, setResizing] = useState(null);
+  const [resizePreview, setResizePreview] = useState(null);
   const canvasRef = useRef(null);
+  const resizingRef = useRef(null);
+  const resizePreviewRef = useRef(null);
   const [now, setNow] = useState(() => dayjs());
 
   useEffect(() => {
@@ -210,46 +354,84 @@ function ScheduleView({
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    resizingRef.current = resizing;
+  }, [resizing]);
+
+  useEffect(() => {
+    resizePreviewRef.current = resizePreview;
+  }, [resizePreview]);
+
+  const snapToQuarterHour = useCallback((minute) => {
+    if (minute === null || Number.isNaN(minute)) return null;
+    const clamped = Math.max(0, Math.min(minute, MINUTES_IN_DAY));
+    return Math.round(clamped / 15) * 15;
+  }, []);
+
+  const getMinuteFromPointer = useCallback((clientY) => {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    const rawMinute = (clientY - bounds.top) / MINUTE_HEIGHT;
+    if (Number.isNaN(rawMinute)) return null;
+    return Math.max(0, Math.min(rawMinute, MINUTES_IN_DAY));
+  }, []);
+
   const blocksWithPosition = useMemo(
     () =>
-      (blocks || []).map((block) => ({
-        ...block,
-        position: computePosition(block.start, block.end, dayStart),
-      })),
-    [blocks, dayStart]
+      (blocks || []).map((block) => {
+        const preview = resizePreview?.blockId === block._id ? resizePreview : null;
+        const start = preview ? preview.start : block.start;
+        const end = preview ? preview.end : block.end;
+        return {
+          ...block,
+          start,
+          end,
+          position: computePosition(start, end, dayStart),
+        };
+      }),
+    [blocks, dayStart, resizePreview]
   );
 
   const isToday = useMemo(() => dayjs(date).isSame(now, 'day'), [date, now]);
+  const nowLineOffset = useMemo(() => {
+    if (!isToday) return null;
+    return Math.max(0, Math.min(now.diff(dayStart, 'minute'), MINUTES_IN_DAY));
+  }, [isToday, now, dayStart]);
   const currentBlock = useMemo(() => {
     if (!isToday) return null;
     const nowValue = now.valueOf();
     return (
-      blocks.find((block) => {
+      blocksWithPosition.find((block) => {
         const start = dayjs(block.start).valueOf();
         const end = dayjs(block.end).valueOf();
         return start <= nowValue && nowValue < end;
       }) || null
     );
-  }, [blocks, isToday, now]);
+  }, [blocksWithPosition, isToday, now]);
 
   const handlePointerDown = (event) => {
+    if (resizingRef.current) return;
     if (event.button !== 0) return;
     const target = event.target;
     if (target instanceof HTMLElement && target.closest('.schedule-block')) {
       return;
     }
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const minute = Math.max(0, Math.min(event.clientY - bounds.top, MINUTES_IN_DAY));
-    setSelection({ startMinute: minute, endMinute: minute });
+    const minuteValue = getMinuteFromPointer(event.clientY);
+    if (minuteValue === null) return;
+    const snapped = snapToQuarterHour(minuteValue);
+    setSelection({ startMinute: snapped, endMinute: snapped });
+    setHoverMinute(snapped);
   };
 
   const handlePointerMove = (event) => {
-    if (!selection) return;
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const minute = Math.max(0, Math.min(event.clientY - bounds.top, MINUTES_IN_DAY));
-    setSelection((prev) => (prev ? { ...prev, endMinute: minute } : null));
+    if (resizingRef.current) return;
+    const minuteValue = getMinuteFromPointer(event.clientY);
+    if (minuteValue === null) return;
+    const snapped = snapToQuarterHour(minuteValue);
+    setHoverMinute(snapped);
+    if (selection) {
+      setSelection((prev) => (prev ? { ...prev, endMinute: snapped } : null));
+    }
   };
 
   const handlePointerUp = () => {
@@ -265,7 +447,115 @@ function ScheduleView({
     const start = dayjs(date).startOf('day').add(startMinuteRounded, 'minute').toISOString();
     const end = dayjs(date).startOf('day').add(endMinuteRounded, 'minute').toISOString();
     setBlockDraft({ start, end });
+    setHoverMinute(null);
   };
+
+  const handleResizePointerDown = (event, block, edge) => {
+    if (!onUpdateBlock) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startISO = dayjs(block.start).toISOString();
+    const endISO = dayjs(block.end).toISOString();
+    setResizing({
+      blockId: block._id,
+      edge,
+      originalStart: startISO,
+      originalEnd: endISO,
+    });
+    setResizePreview({
+      blockId: block._id,
+      start: startISO,
+      end: endISO,
+    });
+  };
+
+  useEffect(() => {
+    if (!resizing) return undefined;
+
+    const handlePointerMoveGlobal = (event) => {
+      const minuteValue = getMinuteFromPointer(event.clientY);
+      if (minuteValue === null) return;
+      const snapped = snapToQuarterHour(minuteValue);
+      setHoverMinute(snapped);
+
+      const activeResize = resizingRef.current;
+      if (!activeResize) return;
+      const { blockId, edge, originalStart, originalEnd } = activeResize;
+      const preview = resizePreviewRef.current && resizePreviewRef.current.blockId === blockId
+        ? resizePreviewRef.current
+        : { blockId, start: originalStart, end: originalEnd };
+
+      const currentStart = dayjs(preview.start);
+      const currentEnd = dayjs(preview.end);
+
+      if (edge === 'start') {
+        const maxMinute = currentEnd.diff(dayStart, 'minute') - 15;
+        const clamped = Math.min(Math.max(snapped, 0), maxMinute);
+        const nextStart = dayjs(dayStart).add(clamped, 'minute');
+        setResizePreview({
+          blockId,
+          start: nextStart.toISOString(),
+          end: currentEnd.toISOString(),
+        });
+      } else {
+        const minMinute = currentStart.diff(dayStart, 'minute') + 15;
+        const clamped = Math.max(Math.min(snapped, MINUTES_IN_DAY), minMinute);
+        const nextEnd = dayjs(dayStart).add(clamped, 'minute');
+        setResizePreview({
+          blockId,
+          start: currentStart.toISOString(),
+          end: nextEnd.toISOString(),
+        });
+      }
+    };
+
+    const handlePointerUpGlobal = () => {
+      const activeResize = resizingRef.current;
+      resizingRef.current = null;
+      setResizing(null);
+      setHoverMinute(null);
+
+      if (!activeResize) {
+        setResizePreview(null);
+        return;
+      }
+
+      const preview = resizePreviewRef.current && resizePreviewRef.current.blockId === activeResize.blockId
+        ? resizePreviewRef.current
+        : null;
+
+      if (!preview) {
+        setResizePreview(null);
+        return;
+      }
+
+      if (
+        preview.start === activeResize.originalStart &&
+        preview.end === activeResize.originalEnd
+      ) {
+        setResizePreview(null);
+        return;
+      }
+
+      if (!onUpdateBlock) {
+        setResizePreview(null);
+        return;
+      }
+
+      Promise.resolve(onUpdateBlock(activeResize.blockId, { start: preview.start, end: preview.end }))
+        .catch(() => {})
+        .finally(() => {
+          setResizePreview(null);
+        });
+    };
+
+    window.addEventListener('pointermove', handlePointerMoveGlobal);
+    window.addEventListener('pointerup', handlePointerUpGlobal);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMoveGlobal);
+      window.removeEventListener('pointerup', handlePointerUpGlobal);
+    };
+  }, [resizing, getMinuteFromPointer, snapToQuarterHour, dayStart, onUpdateBlock]);
 
   const handleDragEnd = async (event) => {
     const { active, over } = event;
@@ -324,13 +614,24 @@ function ScheduleView({
             onMouseDown={handlePointerDown}
             onMouseMove={handlePointerMove}
             onMouseUp={handlePointerUp}
-            onMouseLeave={() => setSelection(null)}
+            onMouseLeave={() => {
+              setSelection(null);
+              setHoverMinute(null);
+            }}
           >
             <div className="schedule-lines">
               {HOURS.map((hour) => (
                 <div key={hour} className="schedule-line" style={{ top: hour * 60 * MINUTE_HEIGHT }} />
               ))}
             </div>
+            {hoverMinute !== null ? (
+              <div className="schedule-hover-line" style={{ top: hoverMinute * MINUTE_HEIGHT }} />
+            ) : null}
+            {nowLineOffset !== null ? (
+              <div className="schedule-now-line" style={{ top: nowLineOffset * MINUTE_HEIGHT }}>
+                <span>{now.format('HH:mm')}</span>
+              </div>
+            ) : null}
             {selection ? (
               <div
                 className="schedule-selection"
@@ -342,7 +643,12 @@ function ScheduleView({
             ) : null}
             <div className="schedule-blocks">
               {blocksWithPosition.map((block) => (
-                <DroppableBlock key={block._id} block={block}>
+                <DroppableBlock
+                  key={block._id}
+                  block={block}
+                  onDoubleClick={() => setEditingBlock(block)}
+                  onResizeStart={handleResizePointerDown}
+                >
                   <header className="schedule-block-header">
                     <div>
                       <span className="schedule-block-type">{block.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
@@ -359,9 +665,6 @@ function ScheduleView({
                           {(block.tasks || []).length > 0 ? `${block.tasks.length}건 배정됨` : '작업을 배치하세요'}
                         </div>
                       )}
-                      <button type="button" className="schedule-block-delete" onClick={() => onDeleteBlock(block)}>
-                        삭제
-                      </button>
                     </div>
                   </header>
                 </DroppableBlock>
@@ -398,6 +701,20 @@ function ScheduleView({
           } catch (error) {
             // handled via toast in parent
           }
+        }}
+      />
+      <EditBlockModal
+        block={editingBlock}
+        onCancel={() => setEditingBlock(null)}
+        onSubmit={async (updates) => {
+          if (!editingBlock) return;
+          await onUpdateBlock(editingBlock._id, updates);
+          setEditingBlock(null);
+        }}
+        onDelete={async () => {
+          if (!editingBlock) return;
+          await onDeleteBlock(editingBlock);
+          setEditingBlock(null);
         }}
       />
     </div>

@@ -285,6 +285,18 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
+  const handleUpdateBlock = async (blockId, updates) => {
+    try {
+      await api.schedule.updateBlock(token, blockId, updates);
+      await loadSchedule(activeProfileId, scheduleDate);
+      showToast('블록 정보를 수정했습니다.', 'info');
+    } catch (err) {
+      console.error('Failed to update schedule block', err);
+      showToast(err.message || '블록 수정에 실패했습니다.', 'error');
+      throw err;
+    }
+  };
+
   const handleAssignTask = async ({ blockId, taskId, start, end }) => {
     try {
       await api.schedule.assignTask(token, blockId, {
@@ -431,6 +443,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
         loading={scheduleLoading}
         onCreateBlock={handleCreateBlock}
         onDeleteBlock={handleDeleteBlock}
+        onUpdateBlock={handleUpdateBlock}
         onAssignTask={handleAssignTask}
         onUnassignTask={handleUnassignTask}
         onToggleTask={handleToggleTask}

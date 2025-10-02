@@ -1314,9 +1314,44 @@ button {
   background: rgba(148, 163, 184, 0.35);
 }
 
+.schedule-hover-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(37, 99, 235, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.schedule-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(239, 68, 68, 0.9);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.schedule-now-line span {
+  position: absolute;
+  right: 8px;
+  top: -10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: white;
+  color: rgba(239, 68, 68, 0.95);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.18);
+}
+
 .schedule-blocks {
   position: absolute;
   inset: 0;
+  z-index: 4;
 }
 
 .schedule-block {
@@ -1324,13 +1359,16 @@ button {
   left: 12px;
   right: 12px;
   border-radius: 12px;
-  padding: 0.6rem 0.75rem;
+  padding: 0.35rem 0.6rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.2rem;
   color: white;
   cursor: pointer;
   box-shadow: 0 14px 20px rgba(15, 23, 42, 0.18);
+  font-size: 0.75rem;
+  line-height: 1.15;
+  overflow: hidden;
 }
 
 .schedule-block:hover {
@@ -1345,7 +1383,12 @@ button {
 }
 
 .schedule-block strong {
-  font-size: 1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .schedule-block-action {
@@ -1453,6 +1496,7 @@ button {
   border: 1px dashed rgba(59, 130, 246, 0.45);
   border-radius: 10px;
   pointer-events: none;
+  z-index: 1;
 }
 
 .schedule-block.dropping {
@@ -1464,27 +1508,27 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 0.6rem;
+  gap: 0.4rem;
 }
 
 .schedule-block-header > div {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.15rem;
 }
 
 .schedule-block-type {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  padding: 0.15rem 0.45rem;
+  padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   background: rgba(15, 23, 42, 0.25);
 }
 
 .schedule-block-time-range {
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   opacity: 0.85;
 }
 
@@ -1510,15 +1554,33 @@ button {
 
 .schedule-block-summary {
   border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.78rem;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.68rem;
   font-weight: 600;
   background: rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.95);
-  max-width: 220px;
+  max-width: 70%;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.schedule-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.schedule-editor-header-actions .danger {
+  background: rgba(248, 113, 113, 0.2);
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+}
+
+.schedule-editor-header-actions .danger:hover {
+  background: rgba(248, 113, 113, 0.35);
+  color: #7f1d1d;
 }
 
 .schedule-block-summary.deep {
@@ -1531,6 +1593,44 @@ button {
 
 .schedule-block-hint {
   display: none;
+}
+
+.schedule-block-resize-handle {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.schedule-block-resize-handle::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.schedule-block:hover .schedule-block-resize-handle::after,
+.schedule-block-resize-handle:focus-visible::after {
+  opacity: 1;
+}
+
+.schedule-block-resize-handle.top {
+  top: -4px;
+}
+
+.schedule-block-resize-handle.bottom {
+  bottom: -4px;
 }
 
 .schedule-task-card {
