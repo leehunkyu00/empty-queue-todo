@@ -122,7 +122,7 @@ function DroppableBlock({ block, children, onDoubleClick, onResizeStart }) {
     <div
       ref={setNodeRef}
       className={`schedule-block block-${block.type} ${block.compact ? 'compact' : ''} ${isOver ? 'dropping' : ''}`}
-      style={{ top: block.position.top, height: block.position.height }}
+      style={{ top: block.position.top, height: block.position.height, left: `${block.layoutLeftPct || 0}%`, width: `${block.layoutWidthPct || 100}%` }}
       onDoubleClick={onDoubleClick}
       title="더블클릭해서 편집"
     >
@@ -657,6 +657,57 @@ function ScheduleView({
     [blocks, dayStart, resizePreview]
   );
 
+  // 겹치는 블록을 좌우로 분할 배치하기 위한 가로 레이아웃 계산
+  const blocksWithLayout = useMemo(() => {
+    const items = (blocksWithPosition || []).map((b) => ({ ...b }));
+    if (items.length <= 1) {
+      return items.map((b) => ({ ...b, layoutLeftPct: 0, layoutWidthPct: 100 }));
+    }
+
+    const sorted = [...items].sort((a, b) => a.startMinuteOfDay - b.startMinuteOfDay);
+    const clusters = [];
+    let current = [];
+    let currentEnd = -1;
+    for (const block of sorted) {
+      if (current.length === 0) {
+        current = [block];
+        currentEnd = block.endMinuteOfDay;
+      } else if (block.startMinuteOfDay < currentEnd) {
+        current.push(block);
+        currentEnd = Math.max(currentEnd, block.endMinuteOfDay);
+      } else {
+        clusters.push(current);
+        current = [block];
+        currentEnd = block.endMinuteOfDay;
+      }
+    }
+    if (current.length > 0) clusters.push(current);
+
+    clusters.forEach((cluster) => {
+      if (cluster.length === 1) {
+        const b = cluster[0];
+        b.layoutLeftPct = 0;
+        b.layoutWidthPct = 100;
+        return;
+      }
+      const ordered = cluster
+        .slice()
+        .sort((a, b) => {
+          const aTypeRank = a.type === 'deep' ? 0 : 1;
+          const bTypeRank = b.type === 'deep' ? 0 : 1;
+          if (aTypeRank !== bTypeRank) return aTypeRank - bTypeRank;
+          return a.startMinuteOfDay - b.startMinuteOfDay;
+        });
+      const width = 100 / ordered.length;
+      ordered.forEach((b, index) => {
+        b.layoutLeftPct = index * width;
+        b.layoutWidthPct = width;
+      });
+    });
+
+    return items;
+  }, [blocksWithPosition]);
+
   const isToday = useMemo(() => dayjs(date).isSame(now, 'day'), [date, now]);
   const nowLineOffset = useMemo(() => {
     if (!isToday) return null;
@@ -943,7 +994,7 @@ function ScheduleView({
               />
             ) : null}
             <div className="schedule-blocks">
-              {blocksWithPosition.map((block) => (
+              {blocksWithLayout.map((block) => (
                 <DroppableBlock
                   key={block._id}
                   block={{ ...block, compact: block.durationMinutes <= 30 }}
