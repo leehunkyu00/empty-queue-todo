@@ -217,7 +217,7 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
   );
 }
 
-function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
+function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, dayStart }) {
   const [type, setType] = useState('deep');
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState('09:00');
@@ -225,6 +225,7 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
+  const [localTasks, setLocalTasks] = useState([]);
 
   useEffect(() => {
     if (!block) return;
@@ -235,6 +236,7 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
     setError(null);
     setSubmitting(false);
     setDeleting(false);
+    setLocalTasks(block.tasks || []);
   }, [block]);
 
   if (!block) return null;
@@ -292,6 +294,16 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
     }
   };
 
+  const handleUnassign = async (task) => {
+    if (!onUnassignTask || !block) return;
+    try {
+      await onUnassignTask(task, { blockId: block._id, dateKey: dayStart.format('YYYY-MM-DD') });
+      setLocalTasks((prev) => prev.filter((t) => (t.assignmentId && task.assignmentId ? t.assignmentId !== task.assignmentId : t._id !== task._id)));
+    } catch (err) {
+      setError(err?.message || '작업 해제에 실패했습니다.');
+    }
+  };
+
   return (
     <div className="schedule-manager-overlay" role="dialog" aria-modal="true">
       <div className="schedule-manager">
@@ -330,6 +342,26 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel }) {
           제목
           <input type="text" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="블록 제목" />
         </label>
+        <section className="block-task-list">
+          <h4>배정된 작업</h4>
+          {localTasks.length === 0 ? (
+            <p className="muted">배정된 작업이 없습니다.</p>
+          ) : (
+            <ul>
+              {localTasks.map((task) => (
+                <li key={task.assignmentId || task._id}>
+                  <div className="task-info">
+                    <strong>{task.title}</strong>
+                    <small>{task.queue === 'admin' ? 'Admin' : 'Deep Work'}</small>
+                  </div>
+                  <button type="button" className="danger" onClick={() => handleUnassign(task)}>
+                    해제
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
         {error ? <p className="schedule-error">{error}</p> : null}
         <div className="schedule-manager-actions">
           <button type="button" onClick={handleSubmit} disabled={submitting}>
@@ -1191,6 +1223,8 @@ function ScheduleView({
           await onDeleteBlock(editingBlock);
           setEditingBlock(null);
         }}
+        onUnassignTask={onUnassignTask}
+        dayStart={dayStart}
       />
       {onCreateTask ? (
         <TaskEditorModal

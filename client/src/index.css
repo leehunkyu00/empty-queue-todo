@@ -2105,6 +2105,46 @@ button {
   cursor: not-allowed;
 }
 
+/* 블록 수정 모달 내 작업 리스트 */
+.block-task-list {
+  margin-top: 0.8rem;
+}
+.block-task-list h4 {
+  margin: 0 0 0.5rem 0;
+}
+.block-task-list .muted {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+.block-task-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.block-task-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.block-task-list li .task-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.block-task-list li strong {
+  color: #0f172a;
+}
+.block-task-list li small {
+  color: #64748b;
+}
+
 @media (max-width: 960px) {
   .schedule-board {
     grid-template-columns: 60px 1fr;
