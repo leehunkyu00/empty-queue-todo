@@ -858,6 +858,7 @@ function ScheduleView({
       taskId: active.data.current.task._id,
       start: block.start,
       end: block.end,
+      scheduleDate: date,
     });
   };
 

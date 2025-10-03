@@ -263,6 +263,8 @@ async function createTask(req, res) {
       }
     }
 
+    const scheduledDateKey = scheduledStart ? dayjs(scheduledStart).format('YYYY-MM-DD') : null;
+
     const task = await Task.create({
       user: userId,
       title,
@@ -275,6 +277,7 @@ async function createTask(req, res) {
       assignedProfileName: assigneeProfile.name,
       scheduledStart: scheduledStart ? new Date(scheduledStart) : undefined,
       scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : undefined,
+      scheduledDateKey,
     });
 
     return res.status(201).json({ task });
@@ -369,9 +372,11 @@ async function updateTask(req, res) {
         }
         task.scheduledStart = startDate;
         task.scheduledEnd = endDate;
+        task.scheduledDateKey = dayjs(startDate).format('YYYY-MM-DD');
       } else if (!scheduledStart && !scheduledEnd) {
         task.scheduledStart = null;
         task.scheduledEnd = null;
+        task.scheduledDateKey = null;
       } else {
         return res.status(400).json({ message: 'Both scheduledStart and scheduledEnd are required to set a schedule' });
       }
@@ -597,14 +602,32 @@ async function getSchedule(req, res) {
 
     const blocks = rawBlocks.filter((block) => blockAppliesOnDay(block, targetDay, dayStart, dayEnd));
 
+    const targetDateKey = targetDay.format('YYYY-MM-DD');
+
     const scheduledTasks = await Task.find({
       user: userId,
       assignedProfileId: activeProfile.profileId,
       scheduledBlock: { $ne: null },
       $or: [
-        { scheduledStart: { $gte: dayStartDate, $lt: dayEndDate } },
-        { scheduledStart: { $exists: false } },
-        { scheduledStart: null },
+        { scheduledDateKey: targetDateKey },
+        {
+          $and: [
+            { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
+            { scheduledStart: { $gte: dayStartDate, $lt: dayEndDate } },
+          ],
+        },
+        {
+          $and: [
+            { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
+            { scheduledStart: { $exists: false } },
+          ],
+        },
+        {
+          $and: [
+            { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
+            { scheduledStart: null },
+          ],
+        },
       ],
     })
       .lean();
@@ -633,6 +656,9 @@ async function getSchedule(req, res) {
         .filter((task) => {
           if (!task.scheduledBlock || task.scheduledBlock.toString() !== block._id.toString()) {
             return false;
+          }
+          if (task.scheduledDateKey) {
+            return task.scheduledDateKey === targetDateKey;
           }
           if (!task.scheduledStart) {
             return true;
@@ -853,7 +879,10 @@ async function deleteScheduleBlock(req, res) {
       return res.status(404).json({ message: 'Schedule block not found' });
     }
 
-    await Task.updateMany({ scheduledBlock: block._id }, { $set: { scheduledBlock: null, scheduledStart: null, scheduledEnd: null } });
+    await Task.updateMany(
+      { scheduledBlock: block._id },
+      { $set: { scheduledBlock: null, scheduledStart: null, scheduledEnd: null, scheduledDateKey: null } }
+    );
     await block.deleteOne();
 
     return res.json({ message: 'Schedule block removed' });
@@ -867,7 +896,7 @@ async function assignTaskToBlock(req, res) {
   try {
     const userId = req.auth.userId;
     const { blockId } = req.params;
-    const { taskId, start, end } = req.body;
+    const { taskId, start, end, scheduleDate } = req.body;
 
     const block = await ScheduleBlock.findOne({ _id: blockId, user: userId });
     if (!block) {
@@ -881,13 +910,6 @@ async function assignTaskToBlock(req, res) {
 
     if (task.assignedProfileId !== block.profileId) {
       return res.status(400).json({ message: 'Task belongs to a different profile' });
-    }
-
-    if (block.type === 'deep') {
-      const existing = await Task.countDocuments({ scheduledBlock: block._id, status: 'pending', _id: { $ne: task._id } });
-      if (existing >= 1) {
-        return res.status(400).json({ message: 'Deep work 블록에는 하나의 작업만 배치할 수 있습니다.' });
-      }
     }
 
     let startDate;
@@ -912,9 +934,58 @@ async function assignTaskToBlock(req, res) {
       endDate = dayStart.add(endMinute, 'minute').toDate();
     }
 
+    if (block.type === 'deep') {
+      const startMoment = dayjs(startDate);
+      const dayStartBoundary = startMoment.startOf('day').toDate();
+      const dayEndBoundary = startMoment.endOf('day').toDate();
+
+      const existing = await Task.countDocuments({
+        scheduledBlock: block._id,
+        status: 'pending',
+        _id: { $ne: task._id },
+        $or: [
+          { scheduledDateKey: scheduleDateKey },
+          {
+            $and: [
+              { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
+              { scheduledStart: { $exists: false } },
+            ],
+          },
+          {
+            $and: [
+              { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
+              { scheduledStart: null },
+            ],
+          },
+          {
+            $and: [
+              { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
+              { scheduledStart: { $gte: dayStartBoundary, $lt: dayEndBoundary } },
+            ],
+          },
+        ],
+      });
+      if (existing >= 1) {
+        return res.status(400).json({ message: 'Deep work 블록에는 하나의 작업만 배치할 수 있습니다.' });
+      }
+    }
+
+    let scheduleDateKey = null;
+    if (typeof scheduleDate === 'string') {
+      const trimmed = scheduleDate.trim();
+      if (trimmed) {
+        const parsed = dayjs(trimmed);
+        scheduleDateKey = parsed.isValid() ? parsed.format('YYYY-MM-DD') : trimmed;
+      }
+    }
+    if (!scheduleDateKey) {
+      scheduleDateKey = dayjs(startDate).format('YYYY-MM-DD');
+    }
+
     task.scheduledBlock = block._id;
     task.scheduledStart = startDate;
     task.scheduledEnd = endDate;
+    task.scheduledDateKey = scheduleDateKey;
     await task.save();
 
     return res.json({ task });
@@ -937,6 +1008,7 @@ async function unassignTaskFromBlock(req, res) {
     task.scheduledBlock = null;
     task.scheduledStart = null;
     task.scheduledEnd = null;
+    task.scheduledDateKey = null;
     await task.save();
 
     return res.json({ task });

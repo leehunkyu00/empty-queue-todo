@@ -343,15 +343,17 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
-  const handleAssignTask = async ({ blockId, taskId, start, end }) => {
+  const handleAssignTask = async ({ blockId, taskId, start, end, scheduleDate: scheduleDateParam }) => {
+    const targetDate = scheduleDateParam || scheduleDate;
     try {
       await api.schedule.assignTask(token, blockId, {
         taskId,
         start,
         end,
+        scheduleDate: targetDate,
       });
       await Promise.all([
-        loadSchedule(activeProfileId, scheduleDate),
+        loadSchedule(activeProfileId, targetDate),
         loadCoreData(activeProfileId, { withLoading: false }),
       ]);
       showToast('작업을 블록에 배치했습니다.', 'success');
