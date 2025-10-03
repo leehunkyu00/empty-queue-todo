@@ -113,7 +113,7 @@ function DraggableTask({ task, onDoubleClick, onDelete }) {
   );
 }
 
-function DroppableBlock({ block, children, onDoubleClick, onResizeStart }) {
+function DroppableBlock({ block, children, onDoubleClick, onResizeStart, onDragStart, onDragMove, onDragEnd }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `block-${block._id}`,
     data: { block },
@@ -121,9 +121,15 @@ function DroppableBlock({ block, children, onDoubleClick, onResizeStart }) {
   return (
     <div
       ref={setNodeRef}
-      className={`schedule-block block-${block.type} ${block.compact ? 'compact' : ''} ${isOver ? 'dropping' : ''}`}
+      className={`schedule-block block-${block.type} ${block.compact ? 'compact' : ''} ${isOver ? 'dropping' : ''} ${block.unassigned ? 'unassigned' : ''} ${block.isNow ? 'is-now' : ''}`}
       style={{ top: block.position.top, height: block.position.height, left: `${block.layoutLeftPct || 0}%`, width: `${block.layoutWidthPct || 100}%` }}
       onDoubleClick={onDoubleClick}
+      onPointerDown={(event) => {
+        // 리사이즈 핸들에서 시작되는 경우는 제외됨
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest('.schedule-block-resize-handle')) return;
+        if (typeof onDragStart === 'function') onDragStart(event, block);
+      }}
       title="더블클릭해서 편집"
     >
       <button
@@ -371,7 +377,7 @@ function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now, dayStart
             {tasks.map((task) => {
               const isCompleted = task.status === 'completed';
               return (
-                <li key={task._id} className={isCompleted ? 'completed' : ''}>
+                <li key={task.assignmentId || task._id} className={isCompleted ? 'completed' : ''}>
                   <label>
                     <input
                       type="checkbox"
@@ -566,9 +572,13 @@ function ScheduleView({
   const [hoverMinute, setHoverMinute] = useState(null);
   const [resizing, setResizing] = useState(null);
   const [resizePreview, setResizePreview] = useState(null);
+  const [draggingBlock, setDraggingBlock] = useState(null);
+  const [dragPreview, setDragPreview] = useState(null);
   const canvasRef = useRef(null);
   const resizingRef = useRef(null);
   const resizePreviewRef = useRef(null);
+  const draggingRef = useRef(null);
+  const dragPreviewRef = useRef(null);
   const [now, setNow] = useState(() => dayjs());
 
   useEffect(() => {
@@ -583,6 +593,14 @@ function ScheduleView({
   useEffect(() => {
     resizePreviewRef.current = resizePreview;
   }, [resizePreview]);
+
+  useEffect(() => {
+    draggingRef.current = draggingBlock;
+  }, [draggingBlock]);
+
+  useEffect(() => {
+    dragPreviewRef.current = dragPreview;
+  }, [dragPreview]);
 
   useEffect(() => {
     if (!onCreateTask) {
@@ -708,22 +726,93 @@ function ScheduleView({
     return items;
   }, [blocksWithPosition]);
 
+  const beginBlockDrag = (event, block) => {
+    if (!onUpdateBlock) return;
+    event.preventDefault();
+    setDraggingBlock({ blockId: block._id, originalStartMinute: block.startMinuteOfDay, originalEndMinute: block.endMinuteOfDay });
+    setDragPreview({ blockId: block._id, startMinuteOfDay: block.startMinuteOfDay, endMinuteOfDay: block.endMinuteOfDay });
+  };
+
+  useEffect(() => {
+    if (!draggingBlock) return undefined;
+
+    const handlePointerMove = (event) => {
+      const minuteValue = getMinuteFromPointer(event.clientY);
+      if (minuteValue === null) return;
+      const snapped = snapToQuarterHour(minuteValue);
+      const active = draggingRef.current;
+      const preview = dragPreviewRef.current;
+      if (!active || !preview) return;
+
+      const block = blocksWithLayout.find((b) => b._id === active.blockId);
+      if (!block) return;
+      const offset = snapped - block.startMinuteOfDay;
+      const nextStart = Math.max(0, Math.min(block.startMinuteOfDay + offset, MINUTES_IN_DAY - (block.endMinuteOfDay - block.startMinuteOfDay)));
+      const duration = block.endMinuteOfDay - block.startMinuteOfDay;
+      const nextEnd = Math.min(MINUTES_IN_DAY, nextStart + duration);
+      setDragPreview({ blockId: active.blockId, startMinuteOfDay: nextStart, endMinuteOfDay: nextEnd });
+    };
+
+    const handlePointerUp = async () => {
+      const active = draggingRef.current;
+      const preview = dragPreviewRef.current;
+      setDraggingBlock(null);
+      if (!active || !preview || !onUpdateBlock) {
+        setDragPreview(null);
+        return;
+      }
+      if (preview.startMinuteOfDay === active.originalStartMinute && preview.endMinuteOfDay === active.originalEndMinute) {
+        setDragPreview(null);
+        return;
+      }
+      const block = blocksWithLayout.find((b) => b._id === active.blockId);
+      if (!block) {
+        setDragPreview(null);
+        return;
+      }
+      const startISO = dayStart.add(preview.startMinuteOfDay, 'minute').toISOString();
+      const endISO = dayStart.add(preview.endMinuteOfDay, 'minute').toISOString();
+      try {
+        await onUpdateBlock(active.blockId, {
+          start: startISO,
+          end: endISO,
+          startMinuteOfDay: preview.startMinuteOfDay,
+          endMinuteOfDay: preview.endMinuteOfDay,
+        });
+      } finally {
+        setDragPreview(null);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [draggingBlock, blocksWithLayout, dayStart, onUpdateBlock, getMinuteFromPointer, snapToQuarterHour]);
+
   const isToday = useMemo(() => dayjs(date).isSame(now, 'day'), [date, now]);
   const nowLineOffset = useMemo(() => {
     if (!isToday) return null;
     return Math.max(0, Math.min(now.diff(dayStart, 'minute'), MINUTES_IN_DAY));
   }, [isToday, now, dayStart]);
-  const currentBlock = useMemo(() => {
-    if (!isToday) return null;
+  const currentBlocks = useMemo(() => {
+    if (!isToday) return [];
     const nowMinute = Math.max(0, Math.min(now.diff(dayStart, 'minute'), MINUTES_IN_DAY));
-    return (
-      blocksWithPosition.find((block) => {
+    return (blocksWithLayout || [])
+      .filter((block) => {
         const startMinute = Number.isFinite(block.startMinuteOfDay) ? block.startMinuteOfDay : 0;
         const endMinute = Number.isFinite(block.endMinuteOfDay) ? block.endMinuteOfDay : startMinute;
         return startMinute <= nowMinute && nowMinute < endMinute;
-      }) || null
-    );
-  }, [blocksWithPosition, dayStart, isToday, now]);
+      })
+      .sort((a, b) => {
+        const aRank = a.type === 'deep' ? 0 : 1;
+        const bRank = b.type === 'deep' ? 0 : 1;
+        if (aRank !== bRank) return aRank - bRank;
+        return a.startMinuteOfDay - b.startMinuteOfDay;
+      });
+  }, [blocksWithLayout, dayStart, isToday, now]);
 
   const handlePointerDown = (event) => {
     if (resizingRef.current) return;
@@ -915,7 +1004,13 @@ function ScheduleView({
 
   return (
     <div className="schedule-container">
-      <CurrentBlockBanner block={currentBlock} onToggleTask={onToggleTask} onUnassignTask={onUnassignTask} now={now} dayStart={dayStart} />
+      {currentBlocks.length > 0 ? (
+        currentBlocks.map((block) => (
+          <CurrentBlockBanner key={block._id} block={block} onToggleTask={onToggleTask} onUnassignTask={onUnassignTask} now={now} dayStart={dayStart} />
+        ))
+      ) : (
+        <CurrentBlockBanner block={null} onToggleTask={onToggleTask} onUnassignTask={onUnassignTask} now={now} dayStart={dayStart} />
+      )}
 
       <header className="schedule-header">
         <div className="schedule-date-controls">
@@ -994,27 +1089,44 @@ function ScheduleView({
               />
             ) : null}
             <div className="schedule-blocks">
-              {blocksWithLayout.map((block) => (
+              {blocksWithLayout.map((block) => {
+                const preview = dragPreview && dragPreview.blockId === block._id ? dragPreview : null;
+                const visual = preview
+                  ? {
+                      ...block,
+                      startMinuteOfDay: preview.startMinuteOfDay,
+                      endMinuteOfDay: preview.endMinuteOfDay,
+                      position: {
+                        top: preview.startMinuteOfDay * MINUTE_HEIGHT,
+                        height: Math.max(MIN_BLOCK_DURATION_MINUTES, preview.endMinuteOfDay - preview.startMinuteOfDay) * MINUTE_HEIGHT,
+                      },
+                    }
+                  : block;
+                const isUnassigned = (visual.tasks || []).length === 0;
+                const isNowBlock = nowLineOffset !== null && visual.startMinuteOfDay <= nowLineOffset && nowLineOffset < visual.endMinuteOfDay;
+                return (
                 <DroppableBlock
-                  key={block._id}
-                  block={{ ...block, compact: block.durationMinutes <= 30 }}
+                  key={visual._id}
+                  block={{ ...visual, compact: visual.durationMinutes <= 30, unassigned: isUnassigned, isNow: isNowBlock }}
                   onDoubleClick={() => setEditingBlock(block)}
                   onResizeStart={handleResizePointerDown}
+                  onDragStart={beginBlockDrag}
                 >
                   <header className="schedule-block-header">
                     <div className="schedule-block-meta">
-                      <span className="schedule-block-type">{block.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
-                      <strong>{block.title || (block.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
-                      <span className="schedule-block-time-range">{formatTimeRange(block, dayStart)}</span>
+                      <span className="schedule-block-type">{visual.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
+                      <strong>{visual.title || (visual.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
+                      <span className="schedule-block-time-range">{formatTimeRange(visual, dayStart)}</span>
                     </div>
                     <div className="schedule-block-tools">
                       <div className={`schedule-block-summary ${block.type}`}>
-                        {(block.tasks || []).length > 0 ? `${block.tasks.length}건 배정됨` : '작업을 배치하세요'}
+                        {(visual.tasks || []).length > 0 ? `${visual.tasks.length}건 배정됨` : '작업을 배치하세요'}
                       </div>
                     </div>
                   </header>
                 </DroppableBlock>
-              ))}
+                );
+              })}
             </div>
           </div>
           <div className="schedule-sidebar">
