@@ -380,7 +380,7 @@ function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now, dayStart
                     />
                     {task.title}
                   </label>
-                  <button type="button" onClick={() => onUnassignTask(task)}>
+                  <button type="button" onClick={() => onUnassignTask(task, { blockId: block._id, dateKey: dayStart.format('YYYY-MM-DD') })}>
                     해제
                   </button>
                 </li>
@@ -957,15 +957,9 @@ function ScheduleView({
                       <span className="schedule-block-time-range">{formatTimeRange(block, dayStart)}</span>
                     </div>
                     <div className="schedule-block-tools">
-                      {block.type === 'deep' ? (
-                        <div className="schedule-block-summary deep">
-                          {block.tasks && block.tasks.length > 0 ? block.tasks[0].title : '작업을 배치하세요'}
-                        </div>
-                      ) : (
-                        <div className="schedule-block-summary admin">
-                          {(block.tasks || []).length > 0 ? `${block.tasks.length}건 배정됨` : '작업을 배치하세요'}
-                        </div>
-                      )}
+                      <div className={`schedule-block-summary ${block.type}`}>
+                        {(block.tasks || []).length > 0 ? `${block.tasks.length}건 배정됨` : '작업을 배치하세요'}
+                      </div>
                     </div>
                   </header>
                 </DroppableBlock>

@@ -363,9 +363,9 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
-  const handleUnassignTask = async (task) => {
+  const handleUnassignTask = async (task, { blockId, dateKey } = {}) => {
     try {
-      await api.schedule.unassignTask(token, task._id);
+      await api.schedule.unassignTask(token, task._id, { blockId, dateKey });
       await Promise.all([
         loadSchedule(activeProfileId, scheduleDate),
         loadCoreData(activeProfileId, { withLoading: false }),

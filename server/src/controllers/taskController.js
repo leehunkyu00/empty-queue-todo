@@ -3,6 +3,7 @@ const dayjs = require('dayjs');
 const Task = require('../models/Task');
 const User = require('../models/User');
 const ScheduleBlock = require('../models/ScheduleBlock');
+const TaskAssignment = require('../models/TaskAssignment');
 const {
   applyTaskCompletion,
   XP_BY_DIFFICULTY,
@@ -604,33 +605,19 @@ async function getSchedule(req, res) {
 
     const targetDateKey = targetDay.format('YYYY-MM-DD');
 
-    const scheduledTasks = await Task.find({
+    const assignments = await TaskAssignment.find({
       user: userId,
-      assignedProfileId: activeProfile.profileId,
-      scheduledBlock: { $ne: null },
-      $or: [
-        { scheduledDateKey: targetDateKey },
-        {
-          $and: [
-            { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
-            { scheduledStart: { $gte: dayStartDate, $lt: dayEndDate } },
-          ],
-        },
-        {
-          $and: [
-            { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
-            { scheduledStart: { $exists: false } },
-          ],
-        },
-        {
-          $and: [
-            { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
-            { scheduledStart: null },
-          ],
-        },
-      ],
+      profileId: activeProfile.profileId,
+      dateKey: targetDateKey,
     })
+      .populate('task')
       .lean();
+
+    // Admin: 배정된 적이 한 번이라도 있으면 미배정 목록에서 제외
+    const assignedAdminTaskIds = await TaskAssignment.distinct('task', {
+      user: userId,
+      profileId: activeProfile.profileId,
+    });
 
     const unscheduled = await Task.find({
       user: userId,
@@ -638,13 +625,7 @@ async function getSchedule(req, res) {
       status: 'pending',
       $or: [
         { queue: 'deep' },
-        {
-          queue: 'admin',
-          $or: [
-            { scheduledBlock: { $exists: false } },
-            { scheduledBlock: null },
-          ],
-        },
+        { queue: 'admin', _id: { $nin: assignedAdminTaskIds } },
       ],
     })
       .sort({ queue: 1, order: 1 })
@@ -652,25 +633,10 @@ async function getSchedule(req, res) {
 
     const blocksWithTasks = blocks.map((block) => {
       const instance = buildBlockInstanceForDay(block, targetDay);
-      const tasksForBlock = scheduledTasks
-        .filter((task) => {
-          if (!task.scheduledBlock || task.scheduledBlock.toString() !== block._id.toString()) {
-            return false;
-          }
-          if (task.scheduledDateKey) {
-            return task.scheduledDateKey === targetDateKey;
-          }
-          if (!task.scheduledStart) {
-            return true;
-          }
-          const scheduledDate = dayjs(task.scheduledStart);
-          return scheduledDate.isSame(targetDay, 'day');
-        })
-        .sort((a, b) => {
-          const aStart = a.scheduledStart ? new Date(a.scheduledStart).valueOf() : 0;
-          const bStart = b.scheduledStart ? new Date(b.scheduledStart).valueOf() : 0;
-          return aStart - bStart;
-        });
+      const tasksForBlock = assignments
+        .filter((a) => a.block?.toString() === block._id.toString())
+        .map((a) => ({ ...a.task, scheduledStart: a.start, scheduledEnd: a.end, assignmentId: a._id }))
+        .sort((a, b) => new Date(a.scheduledStart).valueOf() - new Date(b.scheduledStart).valueOf());
 
       const daysOfWeek = block.isRecurring !== false ? normalizeDaysOfWeek(block.daysOfWeek) : undefined;
       return {
@@ -883,6 +849,8 @@ async function deleteScheduleBlock(req, res) {
       { scheduledBlock: block._id },
       { $set: { scheduledBlock: null, scheduledStart: null, scheduledEnd: null, scheduledDateKey: null } }
     );
+    // 멀티 배치 모델의 레코드도 함께 정리
+    await TaskAssignment.deleteMany({ user: userId, block: block._id });
     await block.deleteOne();
 
     return res.json({ message: 'Schedule block removed' });
@@ -947,49 +915,20 @@ async function assignTaskToBlock(req, res) {
     scheduleDateKey = dayjs(startDate).format('YYYY-MM-DD');
   }
 
-    if (block.type === 'deep') {
-      const startMoment = dayjs(startDate);
-      const dayStartBoundary = startMoment.startOf('day').toDate();
-      const dayEndBoundary = startMoment.endOf('day').toDate();
+  // Deep Work 다건 배치를 허용하기 위해 기존의 단일 작업 제한 로직을 제거했습니다.
 
-      const existing = await Task.countDocuments({
-        scheduledBlock: block._id,
-        status: 'pending',
-        _id: { $ne: task._id },
-        $or: [
-          { scheduledDateKey: scheduleDateKey },
-          {
-            $and: [
-              { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
-              { scheduledStart: { $exists: false } },
-            ],
-          },
-          {
-            $and: [
-              { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
-              { scheduledStart: null },
-            ],
-          },
-          {
-            $and: [
-              { $or: [{ scheduledDateKey: { $exists: false } }, { scheduledDateKey: null }] },
-              { scheduledStart: { $gte: dayStartBoundary, $lt: dayEndBoundary } },
-            ],
-          },
-        ],
-      });
-      if (existing >= 1) {
-        return res.status(400).json({ message: 'Deep work 블록에는 하나의 작업만 배치할 수 있습니다.' });
-      }
-    }
+    // Deep/Admin 공통: 멀티 배치 지원을 위해 TaskAssignment에 기록
+    const assignment = await TaskAssignment.create({
+      user: userId,
+      profileId: block.profileId,
+      task: task._id,
+      block: block._id,
+      dateKey: scheduleDateKey,
+      start: startDate,
+      end: endDate,
+    });
 
-    task.scheduledBlock = block._id;
-    task.scheduledStart = startDate;
-    task.scheduledEnd = endDate;
-    task.scheduledDateKey = scheduleDateKey;
-    await task.save();
-
-    return res.json({ task });
+    return res.json({ assignment });
   } catch (error) {
     console.error('assignTaskToBlock error:', error);
     return res.status(500).json({ message: 'Failed to assign task to block' });
@@ -1000,19 +939,14 @@ async function unassignTaskFromBlock(req, res) {
   try {
     const userId = req.auth.userId;
     const { taskId } = req.params;
+    const { blockId, dateKey } = req.query || {};
 
-    const task = await Task.findOne({ _id: taskId, user: userId });
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
-    }
+    const query = { user: userId, task: taskId };
+    if (blockId) query.block = blockId;
+    if (dateKey) query.dateKey = dateKey;
 
-    task.scheduledBlock = null;
-    task.scheduledStart = null;
-    task.scheduledEnd = null;
-    task.scheduledDateKey = null;
-    await task.save();
-
-    return res.json({ task });
+    const removed = await TaskAssignment.deleteMany(query);
+    return res.json({ removed: removed.deletedCount });
   } catch (error) {
     console.error('unassignTaskFromBlock error:', error);
     return res.status(500).json({ message: 'Failed to unassign task from block' });
