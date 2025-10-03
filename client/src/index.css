@@ -1315,7 +1315,7 @@ button {
   height: calc(60px * 24);
   background: rgba(248, 250, 252, 0.8);
   border-radius: 18px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .schedule-lines {
@@ -1354,7 +1354,7 @@ button {
 
 .schedule-now-line span {
   position: absolute;
-  right: 8px;
+  left: -96px;
   top: -10px;
   font-size: 0.7rem;
   font-weight: 700;
