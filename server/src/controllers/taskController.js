@@ -930,9 +930,22 @@ async function assignTaskToBlock(req, res) {
         : dayjs(start || block.start || new Date());
       const { startMinute, endMinute } = resolveBlockMinutes(block);
       const dayStart = referenceDay.startOf('day');
-      startDate = dayStart.add(startMinute, 'minute').toDate();
-      endDate = dayStart.add(endMinute, 'minute').toDate();
+    startDate = dayStart.add(startMinute, 'minute').toDate();
+    endDate = dayStart.add(endMinute, 'minute').toDate();
     }
+
+  // Determine schedule date key (used below for deep block uniqueness and when saving)
+  let scheduleDateKey = null;
+  if (typeof scheduleDate === 'string') {
+    const trimmed = scheduleDate.trim();
+    if (trimmed) {
+      const parsed = dayjs(trimmed);
+      scheduleDateKey = parsed.isValid() ? parsed.format('YYYY-MM-DD') : trimmed;
+    }
+  }
+  if (!scheduleDateKey) {
+    scheduleDateKey = dayjs(startDate).format('YYYY-MM-DD');
+  }
 
     if (block.type === 'deep') {
       const startMoment = dayjs(startDate);
@@ -968,18 +981,6 @@ async function assignTaskToBlock(req, res) {
       if (existing >= 1) {
         return res.status(400).json({ message: 'Deep work 블록에는 하나의 작업만 배치할 수 있습니다.' });
       }
-    }
-
-    let scheduleDateKey = null;
-    if (typeof scheduleDate === 'string') {
-      const trimmed = scheduleDate.trim();
-      if (trimmed) {
-        const parsed = dayjs(trimmed);
-        scheduleDateKey = parsed.isValid() ? parsed.format('YYYY-MM-DD') : trimmed;
-      }
-    }
-    if (!scheduleDateKey) {
-      scheduleDateKey = dayjs(startDate).format('YYYY-MM-DD');
     }
 
     task.scheduledBlock = block._id;
