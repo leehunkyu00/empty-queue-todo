@@ -364,22 +364,27 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
             <ul>
               {localTasks.map((task) => {
                 const isCompleted = task.status === 'completed';
+                const isCancelled = task.status === 'cancelled';
+                const isArchived = task.status === 'archived';
                 return (
-                  <li key={task.assignmentId || task._id} className={isCompleted ? 'completed' : ''}>
+                  <li key={task.assignmentId || task._id} className={`${isCompleted ? 'completed' : ''} ${isCancelled ? 'cancelled' : ''} ${isArchived ? 'archived' : ''}`}>
                     <div className="task-info">
                       <label className="task-checkbox-label">
                         <input
                           type="checkbox"
                           checked={isCompleted}
+                          disabled={isCancelled || isArchived}
                           onChange={() => handleToggleTask(task, !isCompleted)}
                         />
                         <strong>{task.title}</strong>
                         <small>{task.queue === 'admin' ? 'Admin' : 'Deep Work'}</small>
                       </label>
                     </div>
-                    <button type="button" className="danger" onClick={() => handleUnassign(task)}>
-                      해제
-                    </button>
+                    {!isCancelled && !isArchived && (
+                      <button type="button" className="danger" onClick={() => handleUnassign(task)}>
+                        해제
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -432,19 +437,24 @@ function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now, dayStart
           <ul>
             {tasks.map((task) => {
               const isCompleted = task.status === 'completed';
+              const isCancelled = task.status === 'cancelled';
+              const isArchived = task.status === 'archived';
               return (
-                <li key={task.assignmentId || task._id} className={isCompleted ? 'completed' : ''}>
+                <li key={task.assignmentId || task._id} className={`${isCompleted ? 'completed' : ''} ${isCancelled ? 'cancelled' : ''} ${isArchived ? 'archived' : ''}`}>
                   <label>
                     <input
                       type="checkbox"
                       checked={isCompleted}
+                      disabled={isCancelled || isArchived}
                       onChange={() => onToggleTask(task, !isCompleted)}
                     />
                     {task.title}
                   </label>
-                  <button type="button" onClick={() => onUnassignTask(task, { blockId: block._id, dateKey: dayStart.format('YYYY-MM-DD') })}>
-                    해제
-                  </button>
+                  {!isCancelled && !isArchived && (
+                    <button type="button" onClick={() => onUnassignTask(task, { blockId: block._id, dateKey: dayStart.format('YYYY-MM-DD') })}>
+                      해제
+                    </button>
+                  )}
                 </li>
               );
             })}

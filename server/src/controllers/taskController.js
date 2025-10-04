@@ -180,7 +180,7 @@ async function getQueues(req, res) {
     const profileFilter = { assignedProfileId: activeProfile.profileId };
 
     const [pendingTasks, recentCompleted] = await Promise.all([
-      Task.find({ user: userId, status: 'pending', ...profileFilter })
+      Task.find({ user: userId, status: { $in: ['pending', 'cancelled'] }, ...profileFilter })
         .sort({ queue: 1, order: 1, createdAt: 1 })
         .lean(),
       Task.find({ user: userId, status: 'completed', ...profileFilter })
@@ -472,7 +472,36 @@ async function deleteTask(req, res) {
       return res.status(403).json({ message: 'Task belongs to a different profile' });
     }
 
-    await Task.deleteOne({ _id: taskId, user: userId });
+    // 스케줄링된 작업들의 상태 확인 및 처리
+    const assignments = await TaskAssignment.find({ user: userId, task: taskId });
+    
+    if (task.queue === 'deep') {
+      // Deep Work 시나리오 1: 미래 할당만 취소, 과거 히스토리 보존
+      const now = new Date();
+      let futureAssignmentsRemoved = 0;
+      
+      for (const assignment of assignments) {
+        const assignmentEndTime = new Date(assignment.end);
+        
+        // 미래 할당인 경우에만 제거 (현재 시간 이후에 끝나는 할당)
+        if (assignmentEndTime > now) {
+          await TaskAssignment.deleteOne({ _id: assignment._id });
+          futureAssignmentsRemoved++;
+        }
+        // 과거 할당은 그대로 유지 (히스토리 보존)
+      }
+      
+      // Deep Work 작업을 완전히 삭제하지 않고 'archived' 상태로 변경
+      task.status = 'archived';
+      task.archivedAt = new Date();
+      await task.save();
+      
+    } else if (task.queue === 'admin') {
+      // Admin Task: 모든 할당을 해제하고 작업을 삭제
+      await TaskAssignment.deleteMany({ user: userId, task: taskId });
+      await Task.deleteOne({ _id: taskId, user: userId });
+    }
+
     return res.json({ message: 'Task removed' });
   } catch (error) {
     console.error('deleteTask error:', error);
@@ -613,6 +642,25 @@ async function getSchedule(req, res) {
       .populate('task')
       .lean();
 
+    // Admin Task 자동 미할당 처리: 타임블록 종료 시간이 지난 Admin Task들을 미할당으로 복귀
+    const now = new Date();
+    const expiredAdminAssignments = assignments.filter(assignment => {
+      const task = assignment.task;
+      return task && task.queue === 'admin' && 
+             task.status === 'pending' && 
+             new Date(assignment.end) < now;
+    });
+
+    if (expiredAdminAssignments.length > 0) {
+      const expiredAssignmentIds = expiredAdminAssignments.map(a => a._id);
+      await TaskAssignment.deleteMany({ _id: { $in: expiredAssignmentIds } });
+      
+      // assignments 배열에서도 제거
+      assignments.splice(0, assignments.length, 
+        ...assignments.filter(a => !expiredAssignmentIds.includes(a._id))
+      );
+    }
+
     // Admin: 배정된 적이 한 번이라도 있으면 미배정 목록에서 제외
     const assignedAdminTaskIds = await TaskAssignment.distinct('task', {
       user: userId,
@@ -622,7 +670,7 @@ async function getSchedule(req, res) {
     const unscheduled = await Task.find({
       user: userId,
       assignedProfileId: activeProfile.profileId,
-      status: 'pending',
+      status: { $in: ['pending', 'cancelled'] }, // archived는 제외
       $or: [
         { queue: 'deep' },
         { queue: 'admin', _id: { $nin: assignedAdminTaskIds } },

@@ -1943,6 +1943,28 @@ button {
   opacity: 0.6;
 }
 
+.current-block-tasks li.cancelled {
+  opacity: 0.4;
+  background: rgba(254, 242, 242, 0.5);
+}
+
+.current-block-tasks li.cancelled label {
+  opacity: 0.5;
+  text-decoration: line-through;
+  color: #dc2626;
+}
+
+.current-block-tasks li.archived {
+  opacity: 0.3;
+  background: rgba(248, 250, 252, 0.5);
+}
+
+.current-block-tasks li.archived label {
+  opacity: 0.4;
+  color: #94a3b8;
+  font-style: italic;
+}
+
 .current-block-tasks li button {
   border: none;
   border-radius: 999px;
@@ -2199,6 +2221,48 @@ button {
 
 .block-task-list li.completed .task-checkbox-label small {
   color: #94a3b8;
+}
+
+/* 취소된 작업 스타일 */
+.block-task-list li.cancelled {
+  opacity: 0.4;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.block-task-list li.cancelled .task-checkbox-label strong {
+  text-decoration: line-through;
+  color: #dc2626;
+}
+
+.block-task-list li.cancelled .task-checkbox-label small {
+  color: #f87171;
+}
+
+.block-task-list li.cancelled .task-checkbox-label input[type="checkbox"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 아카이브된 작업 스타일 (히스토리 보존용) */
+.block-task-list li.archived {
+  opacity: 0.3;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.block-task-list li.archived .task-checkbox-label strong {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.block-task-list li.archived .task-checkbox-label small {
+  color: #cbd5e1;
+}
+
+.block-task-list li.archived .task-checkbox-label input[type="checkbox"] {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 @media (max-width: 960px) {
