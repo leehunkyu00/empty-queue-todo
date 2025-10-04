@@ -121,7 +121,7 @@ function DroppableBlock({ block, children, onDoubleClick, onResizeStart, onDragS
   return (
     <div
       ref={setNodeRef}
-      className={`schedule-block block-${block.type} ${block.compact ? 'compact' : ''} ${isOver ? 'dropping' : ''} ${block.unassigned ? 'unassigned' : ''} ${block.isNow ? 'is-now' : ''}`}
+      className={`schedule-block block-${block.type} ${block.compact ? 'compact' : ''} ${isOver ? 'dropping' : ''} ${block.unassigned ? 'unassigned' : ''} ${block.isNow ? 'is-now' : ''} ${block.noDrop ? 'no-drop' : ''}`}
       style={{ top: block.position.top, height: block.position.height, left: `${block.layoutLeftPct || 0}%`, width: `${block.layoutWidthPct || 100}%` }}
       onDoubleClick={onDoubleClick}
       onPointerDown={(event) => {
@@ -1025,9 +1025,13 @@ function ScheduleView({
     if (!over || !active?.data?.current?.task) return;
     const block = over.data?.current?.block;
     if (!block) return;
+    const task = active.data.current.task;
+    if ((task.queue === 'admin' && block.type !== 'admin') || (task.queue === 'deep' && block.type !== 'deep')) {
+      return; // 큐-블록 불일치 시 배치 금지
+    }
     await onAssignTask({
       blockId: block._id,
-      taskId: active.data.current.task._id,
+      taskId: task._id,
       start: block.start,
       end: block.end,
       scheduleDate: date,
@@ -1136,10 +1140,11 @@ function ScheduleView({
                   : block;
                 const isUnassigned = (visual.tasks || []).length === 0;
                 const isNowBlock = nowLineOffset !== null && visual.startMinuteOfDay <= nowLineOffset && nowLineOffset < visual.endMinuteOfDay;
+                const invalidDrop = activeDragTask && activeDragTask.queue !== visual.type;
                 return (
                 <DroppableBlock
                   key={visual._id}
-                  block={{ ...visual, compact: visual.durationMinutes <= 30, unassigned: isUnassigned, isNow: isNowBlock }}
+                  block={{ ...visual, compact: visual.durationMinutes <= 30, unassigned: isUnassigned, isNow: isNowBlock, noDrop: Boolean(invalidDrop) }}
                   onDoubleClick={() => setEditingBlock(block)}
                   onResizeStart={handleResizePointerDown}
                   onDragStart={beginBlockDrag}

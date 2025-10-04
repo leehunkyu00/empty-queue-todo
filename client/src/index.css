@@ -1591,6 +1591,11 @@ button {
   outline-offset: -6px;
 }
 
+/* 큐-블록 불일치 시 드롭 불가 피드백 */
+.schedule-block.no-drop {
+  filter: grayscale(0.6) opacity(0.8);
+}
+
 .schedule-block-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
