@@ -19,7 +19,7 @@ const scheduleBlockSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['deep', 'admin'],
+      enum: ['deep', 'admin', 'fixed'],
       required: true,
     },
     title: {

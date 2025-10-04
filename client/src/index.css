@@ -1454,6 +1454,10 @@ button {
   background: linear-gradient(135deg, #7c3aed, #9333ea);
 }
 
+.block-fixed {
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+}
+
 .schedule-sidebar {
   display: flex;
   flex-direction: column;
@@ -1740,6 +1744,10 @@ button {
   background: rgba(15, 23, 42, 0.22);
 }
 
+.schedule-block-summary.fixed {
+  background: rgba(15, 23, 42, 0.22);
+}
+
 .schedule-block-hint {
   display: none;
 }
@@ -1883,6 +1891,10 @@ button {
 
 .current-block-banner.admin {
   background: linear-gradient(135deg, rgba(147, 51, 234, 0.22), rgba(168, 85, 247, 0.18));
+}
+
+.current-block-banner.fixed {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(249, 115, 22, 0.18));
 }
 
 .current-block-banner.idle {

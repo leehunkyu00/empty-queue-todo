@@ -199,6 +199,10 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
             <input type="radio" name="blockType" value="admin" checked={type === 'admin'} onChange={() => setType('admin')} />
             Admin
           </label>
+          <label>
+            <input type="radio" name="blockType" value="fixed" checked={type === 'fixed'} onChange={() => setType('fixed')} />
+            고정 업무
+          </label>
         </div>
         <label>
           제목 (선택)
@@ -341,6 +345,10 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
             <input type="radio" name="editBlockType" value="admin" checked={type === 'admin'} onChange={() => setType('admin')} />
             Admin
           </label>
+          <label>
+            <input type="radio" name="editBlockType" value="fixed" checked={type === 'fixed'} onChange={() => setType('fixed')} />
+            고정 업무
+          </label>
         </div>
         <div className="schedule-time-inputs">
           <label>
@@ -419,16 +427,17 @@ function CurrentBlockBanner({ block, onToggleTask, onUnassignTask, now, dayStart
   }
 
   const isDeep = block.type === 'deep';
+  const isFixed = block.type === 'fixed';
   const tasks = block.tasks || [];
 
   return (
-    <section className={`current-block-banner ${isDeep ? 'deep' : 'admin'}`}>
+    <section className={`current-block-banner ${isDeep ? 'deep' : isFixed ? 'fixed' : 'admin'}`}>
       <div className="current-block-meta">
         <h3>
-          {isDeep ? '현재 모드: Deep Work' : '현재 모드: Admin'}
+          {isDeep ? '현재 모드: Deep Work' : isFixed ? '현재 모드: 고정 업무' : '현재 모드: Admin'}
           <span>{formatTimeRange(block, dayStart)}</span>
         </h3>
-        <p>{block.title || (isDeep ? '집중력을 높이기 위한 깊은 몰입 시간입니다.' : '빠르게 처리할 수 있는 작업들을 한 번에 끝내보세요.')}</p>
+        <p>{block.title || (isDeep ? '집중력을 높이기 위한 깊은 몰입 시간입니다.' : isFixed ? '고정된 업무 시간입니다. 집중하세요.' : '빠르게 처리할 수 있는 작업들을 한 번에 끝내보세요.')}</p>
       </div>
       <div className="current-block-tasks">
         {tasks.length === 0 ? (
@@ -1174,7 +1183,7 @@ function ScheduleView({
                   : block;
                 const isUnassigned = (visual.tasks || []).length === 0;
                 const isNowBlock = nowLineOffset !== null && visual.startMinuteOfDay <= nowLineOffset && nowLineOffset < visual.endMinuteOfDay;
-                const invalidDrop = activeDragTask && activeDragTask.queue !== visual.type;
+                const invalidDrop = activeDragTask && (activeDragTask.queue !== visual.type || visual.type === 'fixed');
                 return (
                 <DroppableBlock
                   key={visual._id}
@@ -1185,13 +1194,13 @@ function ScheduleView({
                 >
                   <header className="schedule-block-header">
                     <div className="schedule-block-meta">
-                      <span className="schedule-block-type">{visual.type === 'deep' ? 'Deep Work' : 'Admin'}</span>
-                      <strong>{visual.title || (visual.type === 'deep' ? '집중 블록' : 'Admin 블록')}</strong>
+                      <span className="schedule-block-type">{visual.type === 'deep' ? 'Deep Work' : visual.type === 'admin' ? 'Admin' : '고정 업무'}</span>
+                      <strong>{visual.title || (visual.type === 'deep' ? '집중 블록' : visual.type === 'admin' ? 'Admin 블록' : '고정 업무 블록')}</strong>
                       <span className="schedule-block-time-range">{formatTimeRange(visual, dayStart)}</span>
                     </div>
                     <div className="schedule-block-tools">
                       <div className={`schedule-block-summary ${block.type}`}>
-                        {(visual.tasks || []).length > 0 ? `${visual.tasks.length}건 배정됨` : '작업을 배치하세요'}
+                        {visual.type === 'fixed' ? '고정 업무 시간' : (visual.tasks || []).length > 0 ? `${visual.tasks.length}건 배정됨` : '작업을 배치하세요'}
                       </div>
                     </div>
                   </header>

@@ -711,6 +711,7 @@ async function getSchedule(req, res) {
 
 async function createScheduleBlock(req, res) {
   try {
+    console.log('createScheduleBlock request body:', req.body);
     const userId = req.auth.userId;
     const { profileId, start, end, type, title, notes, recurring, isRecurring, daysOfWeek, startMinuteOfDay, endMinuteOfDay } = req.body;
 
@@ -718,8 +719,8 @@ async function createScheduleBlock(req, res) {
       return res.status(400).json({ message: 'start, end, and type are required' });
     }
 
-    if (!['deep', 'admin'].includes(type)) {
-      return res.status(400).json({ message: 'type must be deep or admin' });
+    if (!['deep', 'admin', 'fixed'].includes(type)) {
+      return res.status(400).json({ message: 'type must be deep, admin, or fixed' });
     }
 
     const startDate = new Date(start);
@@ -780,6 +781,7 @@ async function createScheduleBlock(req, res) {
     return res.status(201).json({ block });
   } catch (error) {
     console.error('createScheduleBlock error:', error);
+    console.error('Error details:', error.message, error.stack);
     return res.status(500).json({ message: 'Failed to create schedule block' });
   }
 }
@@ -844,8 +846,8 @@ async function updateScheduleBlock(req, res) {
     block.endMinuteOfDay = endMinute;
 
     if (type) {
-      if (!['deep', 'admin'].includes(type)) {
-        return res.status(400).json({ message: 'type must be deep or admin' });
+      if (!['deep', 'admin', 'fixed'].includes(type)) {
+        return res.status(400).json({ message: 'type must be deep, admin, or fixed' });
       }
       block.type = type;
     }
