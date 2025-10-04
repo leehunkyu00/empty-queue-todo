@@ -217,7 +217,7 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
   );
 }
 
-function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, dayStart }) {
+function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, onToggleTask, dayStart }) {
   const [type, setType] = useState('deep');
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState('09:00');
@@ -304,6 +304,20 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, d
     }
   };
 
+  const handleToggleTask = async (task, isCompleted) => {
+    if (!onToggleTask || !block) return;
+    try {
+      await onToggleTask(task, isCompleted);
+      setLocalTasks((prev) => prev.map((t) => 
+        (t.assignmentId && task.assignmentId ? t.assignmentId === task.assignmentId : t._id === task._id)
+          ? { ...t, status: isCompleted ? 'completed' : 'pending' }
+          : t
+      ));
+    } catch (err) {
+      setError(err?.message || '작업 상태 변경에 실패했습니다.');
+    }
+  };
+
   return (
     <div className="schedule-manager-overlay" role="dialog" aria-modal="true">
       <div className="schedule-manager">
@@ -348,17 +362,27 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, d
             <p className="muted">배정된 작업이 없습니다.</p>
           ) : (
             <ul>
-              {localTasks.map((task) => (
-                <li key={task.assignmentId || task._id}>
-                  <div className="task-info">
-                    <strong>{task.title}</strong>
-                    <small>{task.queue === 'admin' ? 'Admin' : 'Deep Work'}</small>
-                  </div>
-                  <button type="button" className="danger" onClick={() => handleUnassign(task)}>
-                    해제
-                  </button>
-                </li>
-              ))}
+              {localTasks.map((task) => {
+                const isCompleted = task.status === 'completed';
+                return (
+                  <li key={task.assignmentId || task._id} className={isCompleted ? 'completed' : ''}>
+                    <div className="task-info">
+                      <label className="task-checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={isCompleted}
+                          onChange={() => handleToggleTask(task, !isCompleted)}
+                        />
+                        <strong>{task.title}</strong>
+                        <small>{task.queue === 'admin' ? 'Admin' : 'Deep Work'}</small>
+                      </label>
+                    </div>
+                    <button type="button" className="danger" onClick={() => handleUnassign(task)}>
+                      해제
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -1229,6 +1253,7 @@ function ScheduleView({
           setEditingBlock(null);
         }}
         onUnassignTask={onUnassignTask}
+        onToggleTask={onToggleTask}
         dayStart={dayStart}
       />
       {onCreateTask ? (

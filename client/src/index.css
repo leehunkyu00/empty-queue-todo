@@ -2150,6 +2150,57 @@ button {
   color: #64748b;
 }
 
+/* 체크박스 스타일 */
+.task-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  flex: 1;
+}
+
+.task-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #cbd5f5;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  margin: 0;
+}
+
+.task-checkbox-label input[type="checkbox"]:checked {
+  background: #2563eb;
+  border-color: #2563eb;
+  position: relative;
+}
+
+.task-checkbox-label input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* 완료된 작업 스타일 */
+.block-task-list li.completed {
+  opacity: 0.6;
+  background: #f1f5f9;
+}
+
+.block-task-list li.completed .task-checkbox-label strong {
+  text-decoration: line-through;
+  color: #64748b;
+}
+
+.block-task-list li.completed .task-checkbox-label small {
+  color: #94a3b8;
+}
+
 @media (max-width: 960px) {
   .schedule-board {
     grid-template-columns: 60px 1fr;
