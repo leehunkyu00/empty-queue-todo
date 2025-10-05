@@ -152,12 +152,16 @@ function DroppableBlock({ block, children, onDoubleClick, onResizeStart, onDragS
 function NewBlockModal({ draft, onSubmit, onCancel }) {
   const [type, setType] = useState('deep');
   const [title, setTitle] = useState('');
+  const [recurrence, setRecurrence] = useState('none'); // none, daily, weekly, monthly, yearly, weekdays, custom
+  const [customDays, setCustomDays] = useState([]); // 맞춤 옵션용
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (draft) {
       setType('deep');
       setTitle('');
+      setRecurrence('none');
+      setCustomDays([]);
     }
   }, [draft]);
 
@@ -168,11 +172,52 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
     const trimmedTitle = title.trim();
     setSubmitting(true);
     try {
-      await onSubmit({
-        ...draft,
-        type,
-        title: trimmedTitle ? trimmedTitle : undefined,
-      });
+      // 반복 옵션에 따른 처리
+      let blocksToCreate = [];
+      
+      if (recurrence === 'none') {
+        // 반복 안함 - 현재 날짜만
+        const currentDay = dayjs(draft.start).day();
+        blocksToCreate = [{
+          ...draft,
+          type,
+          title: trimmedTitle ? trimmedTitle : undefined,
+          dayOfWeek: currentDay,
+        }];
+      } else if (recurrence === 'daily') {
+        // 매일 - 모든 요일
+        blocksToCreate = Array.from({ length: 7 }, (_, i) => ({
+          ...draft,
+          type,
+          title: trimmedTitle ? trimmedTitle : undefined,
+          dayOfWeek: i,
+        }));
+      } else if (recurrence === 'weekdays') {
+        // 주중 매일 (월-금)
+        blocksToCreate = Array.from({ length: 5 }, (_, i) => ({
+          ...draft,
+          type,
+          title: trimmedTitle ? trimmedTitle : undefined,
+          dayOfWeek: i + 1, // 1=월요일, 5=금요일
+        }));
+      } else if (recurrence === 'custom') {
+        // 맞춤 - 선택된 요일들
+        if (customDays.length === 0) {
+          alert('최소 하나의 요일을 선택해주세요.');
+          return;
+        }
+        blocksToCreate = customDays.map(day => ({
+          ...draft,
+          type,
+          title: trimmedTitle ? trimmedTitle : undefined,
+          dayOfWeek: day,
+        }));
+      }
+      
+      // 모든 블록 생성
+      for (const blockData of blocksToCreate) {
+        await onSubmit(blockData);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -190,6 +235,63 @@ function NewBlockModal({ draft, onSubmit, onCancel }) {
         <p>
           {dayjs(draft.start).format('HH:mm')} - {dayjs(draft.end).format('HH:mm')} 시간대를 어떤 작업 모드로 사용할까요?
         </p>
+        <div className="recurrence-selector">
+          <label>반복 설정</label>
+          <div className="recurrence-options">
+            <button 
+              type="button" 
+              className={`recurrence-option ${recurrence === 'none' ? 'active' : ''}`}
+              onClick={() => setRecurrence('none')}
+            >
+              반복 안함
+            </button>
+            <button 
+              type="button" 
+              className={`recurrence-option ${recurrence === 'daily' ? 'active' : ''}`}
+              onClick={() => setRecurrence('daily')}
+            >
+              매일
+            </button>
+            <button 
+              type="button" 
+              className={`recurrence-option ${recurrence === 'weekdays' ? 'active' : ''}`}
+              onClick={() => setRecurrence('weekdays')}
+            >
+              주중 매일(월-금)
+            </button>
+            <button 
+              type="button" 
+              className={`recurrence-option ${recurrence === 'custom' ? 'active' : ''}`}
+              onClick={() => setRecurrence('custom')}
+            >
+              맞춤...
+            </button>
+          </div>
+          
+          {recurrence === 'custom' && (
+            <div className="custom-days-selector">
+              <label>요일 선택</label>
+              <div className="day-buttons">
+                {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`day-button ${customDays.includes(index) ? 'selected' : ''}`}
+                    onClick={() => {
+                      setCustomDays(prev => 
+                        prev.includes(index) 
+                          ? prev.filter(d => d !== index)
+                          : [...prev, index]
+                      );
+                    }}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="block-type-selector">
           <label>
             <input type="radio" name="blockType" value="deep" checked={type === 'deep'} onChange={() => setType('deep')} />
@@ -326,7 +428,12 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
     <div className="schedule-manager-overlay" role="dialog" aria-modal="true">
       <div className="schedule-manager">
         <header className="schedule-editor-header">
-          <h3>블록 수정</h3>
+          <div>
+            <h3>블록 수정</h3>
+            <p className="block-day-info">
+              {['일', '월', '화', '수', '목', '금', '토'][block.dayOfWeek || 1]}요일 블록
+            </p>
+          </div>
           <div className="schedule-editor-header-actions">
             <button type="button" className="danger" onClick={handleDelete} disabled={deleting}>
               {deleting ? '삭제 중...' : '삭제'}
@@ -1249,9 +1356,9 @@ function ScheduleView({
       <NewBlockModal
         draft={blockDraft}
         onCancel={() => setBlockDraft(null)}
-        onSubmit={async ({ start, end, type, title, startMinuteOfDay, endMinuteOfDay }) => {
+        onSubmit={async ({ start, end, type, title, startMinuteOfDay, endMinuteOfDay, dayOfWeek }) => {
           try {
-            await onCreateBlock({ start, end, type, title, startMinuteOfDay, endMinuteOfDay });
+            await onCreateBlock({ start, end, type, title, startMinuteOfDay, endMinuteOfDay, dayOfWeek });
             setBlockDraft(null);
           } catch {
             // handled via toast in parent

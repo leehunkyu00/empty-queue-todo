@@ -296,7 +296,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
     }
   };
 
-  const handleCreateBlock = async ({ start, end, type, title, startMinuteOfDay, endMinuteOfDay }) => {
+  const handleCreateBlock = async ({ start, end, type, title, startMinuteOfDay, endMinuteOfDay, dayOfWeek }) => {
     if (!activeProfileId) {
       showToast('먼저 계정을 선택해주세요.', 'warning');
       return;
@@ -310,6 +310,7 @@ function Dashboard({ token, currentUser, onUserUpdate, onLogout }) {
         title: title && typeof title === 'string' ? title.trim() || undefined : undefined,
         startMinuteOfDay,
         endMinuteOfDay,
+        dayOfWeek,
       });
       await loadSchedule(activeProfileId, scheduleDate);
       showToast('새로운 시간 블록을 만들었습니다.', 'success');

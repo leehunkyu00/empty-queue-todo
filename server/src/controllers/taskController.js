@@ -623,14 +623,15 @@ async function getSchedule(req, res) {
     const dayStartDate = dayStart.toDate();
     const dayEndDate = dayEnd.toDate();
 
-    const rawBlocks = await ScheduleBlock.find({
+    const dayOfWeek = targetDay.day(); // 0=일요일, 1=월요일, ..., 6=토요일
+    
+    const blocks = await ScheduleBlock.find({
       user: userId,
       profileId: activeProfile.profileId,
+      dayOfWeek: dayOfWeek,
     })
-      .sort({ startMinuteOfDay: 1, start: 1 })
+      .sort({ startMinuteOfDay: 1 })
       .lean();
-
-    const blocks = rawBlocks.filter((block) => blockAppliesOnDay(block, targetDay, dayStart, dayEnd));
 
     const targetDateKey = targetDay.format('YYYY-MM-DD');
 
@@ -713,14 +714,18 @@ async function createScheduleBlock(req, res) {
   try {
     console.log('createScheduleBlock request body:', req.body);
     const userId = req.auth.userId;
-    const { profileId, start, end, type, title, notes, recurring, isRecurring, daysOfWeek, startMinuteOfDay, endMinuteOfDay } = req.body;
+    const { profileId, start, end, type, title, notes, dayOfWeek, startMinuteOfDay, endMinuteOfDay } = req.body;
 
-    if (!start || !end || !type) {
-      return res.status(400).json({ message: 'start, end, and type are required' });
+    if (!start || !end || !type || dayOfWeek === undefined) {
+      return res.status(400).json({ message: 'start, end, type, and dayOfWeek are required' });
     }
 
     if (!['deep', 'admin', 'fixed'].includes(type)) {
       return res.status(400).json({ message: 'type must be deep, admin, or fixed' });
+    }
+
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+      return res.status(400).json({ message: 'dayOfWeek must be 0-6 (0=Sunday, 1=Monday, ..., 6=Saturday)' });
     }
 
     const startDate = new Date(start);
@@ -749,10 +754,6 @@ async function createScheduleBlock(req, res) {
 
     ({ start: startMinute, end: endMinute } = clampMinuteRange(startMinute, endMinute));
 
-    const recurringFlag = recurring ?? isRecurring;
-    const isRecurringBlock = recurringFlag !== false;
-    const normalizedDays = isRecurringBlock ? normalizeDaysOfWeek(daysOfWeek) : undefined;
-
     const userDoc = await User.findById(userId);
     if (!userDoc) {
       return res.status(404).json({ message: 'User not found' });
@@ -774,8 +775,8 @@ async function createScheduleBlock(req, res) {
       end: endDate,
       startMinuteOfDay: startMinute,
       endMinuteOfDay: endMinute,
-      isRecurring: isRecurringBlock,
-      daysOfWeek: normalizedDays,
+      dayOfWeek: dayOfWeek,
+      isRecurring: false, // 개별 블록으로 관리
     });
 
     return res.status(201).json({ block });

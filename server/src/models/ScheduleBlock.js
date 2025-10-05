@@ -50,11 +50,17 @@ const scheduleBlockSchema = new mongoose.Schema(
     },
     isRecurring: {
       type: Boolean,
-      default: true,
+      default: false,
     },
     daysOfWeek: {
       type: [Number],
       default: undefined,
+    },
+    dayOfWeek: {
+      type: Number,
+      min: 0,
+      max: 6, // 0=일요일, 1=월요일, ..., 6=토요일
+      required: true,
     },
   },
   {
@@ -62,8 +68,7 @@ const scheduleBlockSchema = new mongoose.Schema(
   }
 );
 
-scheduleBlockSchema.index({ user: 1, profileId: 1, start: 1 });
-scheduleBlockSchema.index({ user: 1, profileId: 1, startMinuteOfDay: 1 });
+scheduleBlockSchema.index({ user: 1, profileId: 1, dayOfWeek: 1, startMinuteOfDay: 1 });
 
 scheduleBlockSchema.set('toJSON', {
   transform: (_doc, ret) => {
