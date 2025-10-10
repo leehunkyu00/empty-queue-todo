@@ -821,6 +821,7 @@ function ScheduleView({
   const [resizePreview, setResizePreview] = useState(null);
   const [draggingBlock, setDraggingBlock] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
+  const dragHoldTimerRef = useRef(null);
   const canvasRef = useRef(null);
   const resizingRef = useRef(null);
   const resizePreviewRef = useRef(null);
@@ -976,8 +977,28 @@ function ScheduleView({
   const beginBlockDrag = (event, block) => {
     if (!onUpdateBlock) return;
     event.preventDefault();
-    setDraggingBlock({ blockId: block._id, originalStartMinute: block.startMinuteOfDay, originalEndMinute: block.endMinuteOfDay });
-    setDragPreview({ blockId: block._id, startMinuteOfDay: block.startMinuteOfDay, endMinuteOfDay: block.endMinuteOfDay });
+    // 드래그 시작을 2초 홀드 후에만 허용
+    if (dragHoldTimerRef.current) {
+      clearTimeout(dragHoldTimerRef.current);
+      dragHoldTimerRef.current = null;
+    }
+    const startTimer = () => {
+      setDraggingBlock({ blockId: block._id, originalStartMinute: block.startMinuteOfDay, originalEndMinute: block.endMinuteOfDay });
+      setDragPreview({ blockId: block._id, startMinuteOfDay: block.startMinuteOfDay, endMinuteOfDay: block.endMinuteOfDay });
+      // 타이머가 발화되었음을 표시
+      dragHoldTimerRef.current = null;
+    };
+    dragHoldTimerRef.current = setTimeout(startTimer, 100);
+
+    const cancelOnPointerUp = () => {
+      if (dragHoldTimerRef.current) {
+        clearTimeout(dragHoldTimerRef.current);
+        dragHoldTimerRef.current = null;
+      }
+      window.removeEventListener('pointerup', cancelOnPointerUp);
+    };
+
+    window.addEventListener('pointerup', cancelOnPointerUp, { once: true });
   };
 
   useEffect(() => {
