@@ -625,13 +625,63 @@ async function getSchedule(req, res) {
 
     const dayOfWeek = targetDay.day(); // 0=일요일, 1=월요일, ..., 6=토요일
     
+    // 반복 블록(isRecurring=true)도 지원하기 위해 조회 조건을 확장한다.
+    // - 반복 아님(isRecurring=false): 해당 요일(dayOfWeek)만 선택
+    // - 반복임(isRecurring!=false): daysOfWeek가 비어있으면 매일, 아니면 포함된 요일만
     const blocks = await ScheduleBlock.find({
       user: userId,
       profileId: activeProfile.profileId,
-      dayOfWeek: dayOfWeek,
+      $or: [
+        // 단일 블록: 명시된 요일만 표시
+        { isRecurring: false, dayOfWeek: dayOfWeek },
+        // 반복 블록: daysOfWeek가 없으면 모든 요일에 표시
+        { $and: [ { $or: [ { isRecurring: { $exists: false } }, { isRecurring: { $ne: false } } ] }, { $or: [ { daysOfWeek: { $size: 0 } }, { daysOfWeek: { $exists: false } } ] } ] },
+        // 반복 블록: daysOfWeek에 해당 요일이 포함된 경우만 표시
+        { $and: [ { $or: [ { isRecurring: { $exists: false } }, { isRecurring: { $ne: false } } ] }, { daysOfWeek: dayOfWeek } ] },
+      ],
     })
       .sort({ startMinuteOfDay: 1 })
       .lean();
+
+    // 시리즈 인식: 같은 프로필에서 (type, startMinuteOfDay, endMinuteOfDay)이 같은 블록들의 요일 모음
+    const seriesKeys = Array.from(
+      new Set(
+        (blocks || [])
+          .map((b) =>
+            `${b.type}|${Number.isFinite(b.startMinuteOfDay) ? b.startMinuteOfDay : deriveMinuteOfDay(b.start)}|${Number.isFinite(b.endMinuteOfDay) ? b.endMinuteOfDay : deriveMinuteOfDay(b.end)}`
+          )
+      )
+    );
+
+    let seriesMap = new Map();
+    if (seriesKeys.length > 0) {
+      const orConditions = seriesKeys
+        .map((key) => {
+          const [t, sStr, eStr] = key.split('|');
+          const s = Number(sStr);
+          const e = Number(eStr);
+          return { type: t, startMinuteOfDay: s, endMinuteOfDay: e };
+        })
+        .filter((cond) => Number.isFinite(cond.startMinuteOfDay) && Number.isFinite(cond.endMinuteOfDay));
+
+      if (orConditions.length > 0) {
+        const peers = await ScheduleBlock.find({
+          user: userId,
+          profileId: activeProfile.profileId,
+          $or: orConditions,
+        })
+          .select('type dayOfWeek startMinuteOfDay endMinuteOfDay start end isRecurring daysOfWeek')
+          .lean();
+
+        peers.forEach((p) => {
+          const startMinute = Number.isFinite(p.startMinuteOfDay) ? p.startMinuteOfDay : deriveMinuteOfDay(p.start);
+          const endMinute = Number.isFinite(p.endMinuteOfDay) ? p.endMinuteOfDay : deriveMinuteOfDay(p.end);
+          const key = `${p.type}|${startMinute}|${endMinute}`;
+          if (!seriesMap.has(key)) seriesMap.set(key, new Set());
+          seriesMap.get(key).add(p.dayOfWeek);
+        });
+      }
+    }
 
     const targetDateKey = targetDay.format('YYYY-MM-DD');
 
@@ -688,10 +738,16 @@ async function getSchedule(req, res) {
         .sort((a, b) => new Date(a.scheduledStart).valueOf() - new Date(b.scheduledStart).valueOf());
 
       const daysOfWeek = block.isRecurring !== false ? normalizeDaysOfWeek(block.daysOfWeek) : undefined;
+      // 단일 블록이라도 동일 패턴의 시리즈가 있으면 이를 제안용 필드로 포함
+      const startMinute = Number.isFinite(block.startMinuteOfDay) ? block.startMinuteOfDay : deriveMinuteOfDay(block.start);
+      const endMinute = Number.isFinite(block.endMinuteOfDay) ? block.endMinuteOfDay : deriveMinuteOfDay(block.end);
+      const seriesKey = `${block.type}|${startMinute}|${endMinute}`;
+      const seriesDays = seriesMap.get(seriesKey) ? Array.from(seriesMap.get(seriesKey)).sort((a, b) => a - b) : undefined;
       return {
         ...block,
         isRecurring: block.isRecurring !== false,
         daysOfWeek,
+        seriesDaysOfWeek: seriesDays,
         ...instance,
         tasks: tasksForBlock,
       };

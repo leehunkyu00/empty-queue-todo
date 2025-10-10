@@ -328,6 +328,9 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
+  // 반복 설정: isRecurring(true=반복), daysOfWeek(선택 요일)
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [daysOfWeek, setDaysOfWeek] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
@@ -339,6 +342,23 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
     setTitle(block.title || '');
     setStartTime(dayjs(block.start).format('HH:mm'));
     setEndTime(dayjs(block.end).format('HH:mm'));
+    // 서버에서 isRecurring가 false가 아니면 반복으로 간주
+    const recurring = block?.isRecurring !== false;
+    let normalizedDays = Array.isArray(block?.daysOfWeek) ? block.daysOfWeek.filter((d) => Number.isInteger(d)) : [];
+    // 과거 데이터 호환: 반복 아님이지만 동일 패턴 시리즈가 있으면 제안값으로 세팅
+    if (!recurring && normalizedDays.length === 0) {
+      const series = Array.isArray(block?.seriesDaysOfWeek) ? block.seriesDaysOfWeek.filter((d) => Number.isInteger(d)) : [];
+      if (series.length >= 2) {
+        // 예: 주중(월-금)으로 구성된 시리즈면 이를 초기 값으로 노출
+        normalizedDays = series;
+        setIsRecurring(true);
+      } else {
+        setIsRecurring(false);
+      }
+    } else {
+      setIsRecurring(recurring);
+    }
+    setDaysOfWeek(normalizedDays);
     setError(null);
     setSubmitting(false);
     setDeleting(false);
@@ -375,14 +395,25 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
     try {
       const startMinuteOfDay = startHour * 60 + startMinute;
       const endMinuteOfDay = endHour * 60 + endMinute;
-      await onSubmit({
+      const payload = {
         type,
         title: title?.trim() ? title.trim() : undefined,
         start: baseStart.toISOString(),
         end: baseEnd.toISOString(),
         startMinuteOfDay,
         endMinuteOfDay,
-      });
+      };
+      // 반복 설정 전송 규칙
+      // isRecurring이 켜져 있으면 { isRecurring: true, daysOfWeek }를 보낸다.
+      // 꺼져 있으면 { isRecurring: false }만 보낸다.
+      if (isRecurring) {
+        payload.isRecurring = true;
+        payload.daysOfWeek = Array.from(new Set((daysOfWeek || []).filter((d) => Number.isInteger(d)))).sort((a, b) => a - b);
+      } else {
+        payload.isRecurring = false;
+        payload.daysOfWeek = undefined;
+      }
+      await onSubmit(payload);
     } catch (err) {
       setError(err?.message || '블록 저장에 실패했습니다.');
       setSubmitting(false);
@@ -466,6 +497,40 @@ function EditBlockModal({ block, onSubmit, onDelete, onCancel, onUnassignTask, o
             종료 시간
             <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
           </label>
+        </div>
+        <div className="recurrence-editor">
+          <label className="recurrence-toggle">
+            <input
+              type="checkbox"
+              checked={isRecurring}
+              onChange={(e) => setIsRecurring(e.target.checked)}
+            />
+            반복 설정 사용
+          </label>
+          {isRecurring && (
+            <div className="custom-days-selector">
+              <label>요일 선택</label>
+              <div className="day-buttons">
+                {['일', '월', '화', '수', '목', '금', '토'].map((label, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`day-button ${daysOfWeek.includes(index) ? 'selected' : ''}`}
+                    onClick={() =>
+                      setDaysOfWeek((prev) =>
+                        prev.includes(index)
+                          ? prev.filter((d) => d !== index)
+                          : [...prev, index]
+                      )
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="muted small">요일을 비워두면 매일 반복으로 적용됩니다.</p>
+            </div>
+          )}
         </div>
         <label>
           제목
